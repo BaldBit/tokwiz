@@ -110,16 +110,30 @@ class TestHookContractsAndResilience(unittest.TestCase):
         self.assertLess(ms3, 200.0)
 
     def test_tokwiz_init_wires_all_agents(self) -> None:
+        # Pre-populate existing project instructions, skills, and hooks to verify non-destructive merge
+        (self.root / "AGENTS.md").write_text("# My Project Custom Rules\n- Always run linter.\n", encoding="utf-8")
+        (self.root / "CLAUDE.md").write_text("# Existing Claude Instructions\n", encoding="utf-8")
+        custom_skill = self.root / ".claude" / "skills" / "my-existing-skill" / "SKILL.md"
+        custom_skill.parent.mkdir(parents=True, exist_ok=True)
+        custom_skill.write_text("# Custom Skill\n", encoding="utf-8")
+        (self.root / ".claude" / "settings.json").write_text(
+            json.dumps({"hooks": {"Stop": [{"matcher": ".*", "hooks": [{"type": "command", "command": "echo custom-stop"}]}]}}),
+            encoding="utf-8",
+        )
+
         rc = cli_mod.main(["init", "--agent", "all", "--root", str(self.root)])
         self.assertEqual(rc, 0)
         self.assertTrue((self.root / ".tokwiz" / "graph.db").exists())
         self.assertTrue((self.root / ".claude" / "skills" / "tokwiz" / "SKILL.md").exists())
+        self.assertTrue(custom_skill.exists())
         self.assertTrue((self.root / ".claude" / "settings.json").exists())
         self.assertTrue((self.root / ".agents" / "skills" / "tokwiz" / "SKILL.md").exists())
         self.assertTrue((self.root / ".agents" / "hooks.json").exists())
-        self.assertTrue((self.root / "CLAUDE.md").exists())
+        self.assertIn("# My Project Custom Rules", (self.root / "AGENTS.md").read_text(encoding="utf-8"))
+        self.assertIn("tokwiz", (self.root / "AGENTS.md").read_text(encoding="utf-8"))
+        self.assertIn("# Existing Claude Instructions", (self.root / "CLAUDE.md").read_text(encoding="utf-8"))
+        self.assertIn("echo custom-stop", (self.root / ".claude" / "settings.json").read_text(encoding="utf-8"))
         self.assertTrue((self.root / "GEMINI.md").exists())
-        self.assertTrue((self.root / "AGENTS.md").exists())
         self.assertTrue((self.root / ".cursorrules").exists())
         self.assertIn(".tokwiz/", (self.root / ".gitignore").read_text(encoding="utf-8"))
 

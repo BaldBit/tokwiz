@@ -57,6 +57,17 @@ def _ensure_line_in_file(file_path: Path, line_to_ensure: str) -> None:
         file_path.write_text(f"{line_to_ensure}\n", encoding="utf-8")
 
 
+def _merge_hook_list(existing_list: object, new_entry: Dict[str, object], script_marker: str) -> List[Dict[str, object]]:
+    """Non-destructively append or update a TokWiz hook entry while preserving existing user hooks."""
+    preserved: List[Dict[str, object]] = []
+    if isinstance(existing_list, list):
+        for item in existing_list:
+            if isinstance(item, dict) and script_marker not in json.dumps(item):
+                preserved.append(item)
+    preserved.append(new_entry)
+    return preserved
+
+
 def _parse_agents(agent_arg: str) -> Set[str]:
     supported = {"claude", "codex", "gemini", "cursor"}
     tokens = {t.strip().lower() for t in agent_arg.split(",") if t.strip()}
@@ -131,18 +142,24 @@ def _cmd_init(argv: List[str]) -> int:
                 settings = {}
         hooks_cfg = settings.setdefault("hooks", {})
         if isinstance(hooks_cfg, dict):
-            hooks_cfg["UserPromptSubmit"] = [
-                {"matcher": ".*", "hooks": [{"type": "command", "command": pre_prompt_cmd}]}
-            ]
-            hooks_cfg["PreToolUse"] = [
+            hooks_cfg["UserPromptSubmit"] = _merge_hook_list(
+                hooks_cfg.get("UserPromptSubmit"),
+                {"matcher": ".*", "hooks": [{"type": "command", "command": pre_prompt_cmd}]},
+                "pre-prompt-predict.py",
+            )
+            hooks_cfg["PreToolUse"] = _merge_hook_list(
+                hooks_cfg.get("PreToolUse"),
                 {
                     "matcher": "Read|read_file|view_file|Bash|run_command",
                     "hooks": [{"type": "command", "command": pre_tool_cmd}],
-                }
-            ]
-            hooks_cfg["Stop"] = [
-                {"matcher": ".*", "hooks": [{"type": "command", "command": post_turn_cmd}]}
-            ]
+                },
+                "pre-tool-guard.py",
+            )
+            hooks_cfg["Stop"] = _merge_hook_list(
+                hooks_cfg.get("Stop"),
+                {"matcher": ".*", "hooks": [{"type": "command", "command": post_turn_cmd}]},
+                "post-turn-record.py",
+            )
         settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
         _ensure_line_in_file(
             base_dir / "CLAUDE.md",
@@ -161,19 +178,33 @@ def _cmd_init(argv: List[str]) -> int:
         shutil.copyfile(_REPO_ROOT / "adapters" / "gemini" / "GEMINI.md", gem_rule)
 
         hooks_json_path = base_dir / ".agents" / "hooks.json"
-        hooks_payload = {
-            "hooks": {
-                "PreInvocation": [{"matcher": ".*", "command": pre_prompt_cmd, "timeout": 5}],
-                "PreToolUse": [
-                    {
-                        "matcher": "read_file|view_file|Read|run_command|Bash",
-                        "command": pre_tool_cmd,
-                        "timeout": 5,
-                    }
-                ],
-                "Stop": [{"matcher": ".*", "command": post_turn_cmd, "timeout": 5}],
-            }
-        }
+        hooks_payload: Dict[str, object] = {}
+        if hooks_json_path.exists():
+            try:
+                hooks_payload = json.loads(hooks_json_path.read_text(encoding="utf-8"))
+            except Exception:
+                hooks_payload = {}
+        gem_hooks = hooks_payload.setdefault("hooks", {})
+        if isinstance(gem_hooks, dict):
+            gem_hooks["PreInvocation"] = _merge_hook_list(
+                gem_hooks.get("PreInvocation"),
+                {"matcher": ".*", "command": pre_prompt_cmd, "timeout": 5},
+                "pre-prompt-predict.py",
+            )
+            gem_hooks["PreToolUse"] = _merge_hook_list(
+                gem_hooks.get("PreToolUse"),
+                {
+                    "matcher": "read_file|view_file|Read|run_command|Bash",
+                    "command": pre_tool_cmd,
+                    "timeout": 5,
+                },
+                "pre-tool-guard.py",
+            )
+            gem_hooks["Stop"] = _merge_hook_list(
+                gem_hooks.get("Stop"),
+                {"matcher": ".*", "command": post_turn_cmd, "timeout": 5},
+                "post-turn-record.py",
+            )
         hooks_json_path.write_text(json.dumps(hooks_payload, indent=2) + "\n", encoding="utf-8")
         _ensure_line_in_file(base_dir / "GEMINI.md", rule_line)
         configured.append("gemini")
