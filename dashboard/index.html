@@ -1575,47 +1575,49 @@
         document.getElementById("kpiDeltaSub").textContent = "Run a prompt to reconcile Forecast vs. Real $";
       }
 
+      const reconciledIds = new Set((data.turns || []).map(t => t.forecast_id));
+      const pendingForecasts = (data.forecasts || []).filter(f => !reconciledIds.has(f.forecast_id));
+
       document.getElementById("kpiReduction").textContent = `${Number(data.avg_reduction_pct || 0).toFixed(1)}%`;
       document.getElementById("kpiTurnsSub").textContent = turnsCount > 0
-        ? `Across ${turnsCount} reconciled turns`
+        ? `${turnsCount} reconciled · ${pendingForecasts.length} pending forecast(s)`
         : forecastsCount > 0
           ? `Est. reduction across ${forecastsCount} forecast(s)`
           : "0 turns recorded in telemetry.db";
 
-      // If no turns have completed yet but pre-prompt forecasts exist (from `tokwiz predict`),
-      // map forecasts into chart items so all 4 charts display the forecasted metrics immediately.
-      const chartTurns = (data.turns && data.turns.length > 0)
-        ? data.turns
-        : (data.forecasts || []).map(f => {
-            const cSonnet = (f.costs && f.costs["claude-sonnet-4"]) ? f.costs["claude-sonnet-4"] : {};
-            const fUsd = Number(cSonnet.cached_cost_usd || cSonnet.uncached_cost_usd || 0);
-            return {
-              forecast_id: f.forecast_id || "tw_pred",
-              prompt: f.prompt || "",
-              profile_code: f.profile_code || "B",
-              optimization_level: f.optimization_level || 1,
-              forecast_total_tokens: Number(f.total_tokens || 0),
-              real_total_tokens: Number(f.total_tokens || 0),
-              unoptimized_baseline_tokens: Number(f.unoptimized_tokens || 0),
-              net_tokens_saved: Number(f.savings_tokens || 0),
-              forecast_cost_usd: fUsd,
-              real_cost_usd: fUsd,
-              cost_delta_usd: 0
-            };
-          });
+      // Combine reconciled turns + any pending unreconciled forecasts so batch `tokwiz predict`
+      // forecasts remain visible alongside completed turns in the charts.
+      const pendingChartItems = pendingForecasts.map(f => {
+        const cSonnet = (f.costs && f.costs["claude-sonnet-4"]) ? f.costs["claude-sonnet-4"] : {};
+        const fUsd = Number(cSonnet.cached_cost_usd || cSonnet.uncached_cost_usd || 0);
+        return {
+          forecast_id: f.forecast_id || "tw_pred",
+          prompt: f.prompt || "",
+          profile_code: f.profile_code || "B",
+          optimization_level: f.optimization_level || 1,
+          forecast_total_tokens: Number(f.total_tokens || 0),
+          real_total_tokens: Number(f.total_tokens || 0),
+          unoptimized_baseline_tokens: Number(f.unoptimized_tokens || 0),
+          net_tokens_saved: Number(f.savings_tokens || 0),
+          forecast_cost_usd: fUsd,
+          real_cost_usd: fUsd,
+          cost_delta_usd: 0
+        };
+      });
+      const chartTurns = [...(data.turns || []), ...pendingChartItems];
 
       renderCostVarianceChart(chartTurns);
       renderTokensTimelineChart(chartTurns);
       renderPhaseBreakdownChart(data.phase_breakdown || {});
       renderModelCostChart(data.model_breakdown || {});
-      renderAuditTable(data.turns || [], data.forecasts || []);
+      renderAuditTable(data.turns || [], pendingForecasts);
     }
 
-    function renderAuditTable(turns, forecasts) {
+    function renderAuditTable(turns, pendingForecasts) {
       const tbody = document.getElementById("auditTableBody");
       tbody.replaceChildren();
 
-      if (turns.length === 0 && forecasts.length === 0) {
+      if (turns.length === 0 && pendingForecasts.length === 0) {
         const tr = document.createElement("tr");
         tr.innerHTML = `<td colspan="11" class="empty-state">No prompts recorded yet in <code>.tokwiz/telemetry.db</code>. Run <code>tokwiz predict "..."</code> or send a prompt in your AI agent to see real-time telemetry here.</td>`;
         tbody.appendChild(tr);
@@ -1642,8 +1644,8 @@
         tbody.appendChild(tr);
       });
 
-      if (turns.length === 0 && forecasts.length > 0) {
-        forecasts.slice().reverse().forEach(f => {
+      if (pendingForecasts.length > 0) {
+        pendingForecasts.slice().reverse().forEach(f => {
           const tr = document.createElement("tr");
           const cCost = (f.costs && f.costs["claude-sonnet-4"]) ? f.costs["claude-sonnet-4"].cached_cost_usd : 0;
           tr.innerHTML = `

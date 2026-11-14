@@ -35,10 +35,47 @@ def _load_active_forecast(workspace_root: Path, payload: Dict[str, object]) -> O
     if isinstance(payload.get("forecast"), dict):
         return payload["forecast"]  # type: ignore[return-value]
 
-    active_path = workspace_root / ".tokwiz" / "active-forecast.json"
+    tokwiz_dir = workspace_root / ".tokwiz"
+    reconciled_ids: set[str] = set()
+    db_path = tokwiz_dir / "telemetry.db"
+    if db_path.exists():
+        try:
+            import sqlite3
+
+            with sqlite3.connect(str(db_path)) as conn:
+                rows = conn.execute("SELECT forecast_id FROM turns").fetchall()
+                reconciled_ids = {str(r[0]) for r in rows}
+        except Exception:
+            reconciled_ids = set()
+
+    # Check forecasts.jsonl in FIFO order for unreconciled forecasts so batch `tokwiz predict`
+    # runs reconcile Turn 1 -> Forecast 1, Turn 2 -> Forecast 2, Turn 3 -> Forecast 3.
+    forecasts_path = tokwiz_dir / "forecasts.jsonl"
+    if forecasts_path.exists():
+        try:
+            unreconciled = []
+            for line in forecasts_path.read_text(encoding="utf-8", errors="replace").splitlines():
+                if not line.strip():
+                    continue
+                rec = json.loads(line)
+                if isinstance(rec, dict) and str(rec.get("forecast_id", "")) not in reconciled_ids:
+                    unreconciled.append(rec)
+            if unreconciled:
+                prompt_hint = str(payload.get("prompt") or "").strip().lower()
+                if prompt_hint:
+                    for item in unreconciled:
+                        if str(item.get("prompt", "")).strip().lower() == prompt_hint:
+                            return item
+                return unreconciled[0]
+        except Exception:
+            pass
+
+    active_path = tokwiz_dir / "active-forecast.json"
     if active_path.exists():
         try:
-            return json.loads(active_path.read_text(encoding="utf-8"))
+            rec = json.loads(active_path.read_text(encoding="utf-8"))
+            if isinstance(rec, dict) and str(rec.get("forecast_id", "")) not in reconciled_ids:
+                return rec
         except Exception:
             return None
     return None

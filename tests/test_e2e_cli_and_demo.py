@@ -169,6 +169,48 @@ class TestEndToEndCLIAndResilience(unittest.TestCase):
         finally:
             shutil.rmtree(tmp_ws, ignore_errors=True)
 
+    def test_batch_predict_and_fifo_post_turn_reconciliation(self) -> None:
+        """When 3 `tokwiz predict` commands are run upfront, Turn 1 must reconcile Forecast 1 (FIFO) and keep 2 pending."""
+        post_mod = _load_mod("post_turn_e2e", REPO_ROOT / "hooks" / "post-turn-record.py")
+        tmp_ws = Path(tempfile.mkdtemp()).resolve()
+        try:
+            (tmp_ws / "src").mkdir(parents=True, exist_ok=True)
+            (tmp_ws / "src" / "auth.py").write_text(
+                "def validate_token(tok: str) -> bool:\n    return tok.startswith('tk_')\n",
+                encoding="utf-8",
+            )
+            prompts = [
+                "Prompt 1: Update validate_token to support x-api-key header",
+                "Prompt 2: Update apply_regional_tax for GB VAT",
+                "Prompt 3: Explain call chain from process_checkout",
+            ]
+            for p in prompts:
+                subprocess.run(
+                    [sys.executable, str(SCRIPTS_DIR / "cli.py"), "predict", p, "--root", str(tmp_ws)],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+
+            forecasts = [
+                json.loads(line)
+                for line in (tmp_ws / ".tokwiz" / "forecasts.jsonl").read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            self.assertEqual(len(forecasts), 3)
+
+            # Now simulate Turn 1 finishing — must reconcile forecasts[0], NOT forecasts[2]!
+            res1 = post_mod.handle_post_turn({"cwd": str(tmp_ws)})
+            self.assertTrue(res1["reconciled"])
+            self.assertEqual(res1["forecast_id"], forecasts[0]["forecast_id"])
+
+            # Simulate Turn 2 finishing — must reconcile forecasts[1]!
+            res2 = post_mod.handle_post_turn({"cwd": str(tmp_ws)})
+            self.assertTrue(res2["reconciled"])
+            self.assertEqual(res2["forecast_id"], forecasts[1]["forecast_id"])
+        finally:
+            shutil.rmtree(tmp_ws, ignore_errors=True)
+
 
 if __name__ == "__main__":
     unittest.main()
