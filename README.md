@@ -207,7 +207,9 @@ CALLEES (1):
 
 Single-turn character counting underestimates agentic workflows by 5x–20x because tool outputs and growing conversation prefixes compound on every step. TokWiz models the entire expected tool-execution loop:
 
-$$\text{Total Forecast} = T_{\text{context}} + T_{\text{prompt}} + \sum_{i=1}^{N_{\text{steps}}} \left( T_{\text{context}, i} + T_{\text{tool\_in}, i} + T_{\text{tool\_out}, i} \right) + T_{\text{reasoning}} + T_{\text{output}}$$
+$$
+\text{Total Forecast} = T_{\text{context}} + T_{\text{prompt}} + \sum_{i=1}^{N_{\text{steps}}} \left( T_{\text{context}, i} + T_{\text{tool-in}, i} + T_{\text{tool-out}, i} \right) + T_{\text{reasoning}} + T_{\text{output}}
+$$
 
 ### Task Complexity Classifier (Profiles A–E)
 TokWiz combines prompt intent analysis with the Project Graph blast radius (impacted files, callers, callees, and total lines in radius) to classify every prompt into one of five execution profiles:
@@ -288,8 +290,9 @@ tokwiz/
 │   ├── pre-tool-guard.py              # PreToolUse lockfile & >300-line read guardrail
 │   └── post-turn-record.py            # PostInvocation / Stop cost reconciliation hook
 ├── adapters/                          # Turnkey configs for Claude Code, Codex, Gemini, Cursor
-├── dashboard/                         # Local analytics web server & Canvas UI (`tokwiz dashboard`)
-├── tests/                             # Tier 1-4 automated test suite (23 tests)
+├── dashboard/                         # Local analytics web server & Chart.js/Canvas UI (`tokwiz dashboard`)
+├── demo/                              # 25-file (~4,500-LOC) side-by-side A/B sandbox generator (`setup-ab-demo.py`)
+├── tests/                             # Tier 1-4 automated unit & E2E test suite (29 tests)
 └── evaluations/                       # A/B benchmark runner & historical transcript replay
 ```
 
@@ -298,7 +301,7 @@ tokwiz/
 ## 2.7 Running Tests & Benchmarks
 
 ```bash
-# Run all 23 unit, hook contract, cost reconciliation, and benchmark tests
+# Run all 29 unit, hook contract, cost reconciliation, E2E, and benchmark tests
 python3 -m unittest discover -s tests -v
 
 # Run the paired A/B benchmark suite
