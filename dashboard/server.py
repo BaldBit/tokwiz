@@ -44,11 +44,14 @@ def _safe_resolve_root(root_arg: Path | str = ".") -> Path:
         resolved = p.resolve() if p.is_absolute() else (cwd / p).resolve()
 
     # If launched from the parent tokwiz repo root which has no local telemetry yet,
-    # and demo/workspace/project-tokwiz has active telemetry/forecasts, use project-tokwiz.
+    # and the external A/B demo workspace has active telemetry/forecasts, use project-tokwiz.
     if resolved == _REPO_ROOT and not (resolved / ".tokwiz" / "forecasts.jsonl").exists():
-        demo_tokwiz = _REPO_ROOT / "demo" / "workspace" / "project-tokwiz"
-        if (demo_tokwiz / ".tokwiz").exists():
-            return demo_tokwiz
+        for candidate in (
+            _REPO_ROOT.parent / "tokwiz-ab-demo" / "project-tokwiz",
+            _REPO_ROOT / "demo" / "workspace" / "project-tokwiz",
+        ):
+            if (candidate / ".tokwiz").exists():
+                return candidate
     return resolved
 
 

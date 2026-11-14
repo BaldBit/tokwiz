@@ -8,17 +8,15 @@ This folder contains a one-command generator (`setup-ab-demo.py`) that builds tw
 python3 demo/setup-ab-demo.py
 ```
 
-This creates:
-* `demo/workspace/project-baseline/` — Standard project **without** TokWiz.
-* `demo/workspace/project-tokwiz/` — Identical project **with** `tokwiz init --agent all` pre-installed (`.tokwiz/graph.db`, `SKILL.md`, lifecycle hooks, and guardrails).
-
-*(Note: `demo/workspace/` is git-ignored so your test runs never dirty the repository.)*
+This creates two standalone projects **outside** the `tokwiz` repository (in `../tokwiz-ab-demo/` so IDE agents never inherit `tokwiz/AGENTS.md` inside `project-baseline`):
+* `../tokwiz-ab-demo/project-baseline/` — Standard project **without** TokWiz.
+* `../tokwiz-ab-demo/project-tokwiz/` — Identical project **with** `tokwiz init --agent all` pre-installed (`.tokwiz/graph.db`, `SKILL.md`, lifecycle hooks, and guardrails).
 
 ---
 
 ## 2. Run the Exact Same Prompts in Both Projects
 
-Open two sessions in your AI coding agent (one rooted in `demo/workspace/project-baseline` and one in `demo/workspace/project-tokwiz`) and run these 3 prompts:
+Open two sessions in your AI coding agent (one rooted in `../tokwiz-ab-demo/project-baseline` and one in `../tokwiz-ab-demo/project-tokwiz`) and run these 3 prompts:
 
 ### Prompt 1 — Symbol Navigation & Callers
 > `"Find where validate_token is defined, list every function that calls it and every function it calls, and explain the authentication flow."`
@@ -39,8 +37,8 @@ From the repository root, run:
 
 ```bash
 # View terminal savings and Forecast-vs-Real Cost MAPE for project-tokwiz
-python3 scripts/cli.py stats --root demo/workspace/project-tokwiz
+tokwiz stats --root ../tokwiz-ab-demo/project-tokwiz
 
 # Launch the Interactive Web Dashboard & Project Graph Visualizer
-python3 scripts/cli.py dashboard --root demo/workspace/project-tokwiz --port 8420
+tokwiz dashboard --root ../tokwiz-ab-demo/project-tokwiz --port 8420
 ```

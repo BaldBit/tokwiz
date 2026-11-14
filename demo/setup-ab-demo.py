@@ -22,7 +22,9 @@ from pathlib import Path
 
 DEMO_DIR = Path(__file__).resolve().parent
 REPO_ROOT = DEMO_DIR.parent
-WORKSPACE_DIR = DEMO_DIR / "workspace"
+# Place the A/B workspace OUTSIDE the `tokwiz` repo by default so IDE agents
+# (Antigravity, Cursor, Claude Code, Gemini CLI) never inherit `tokwiz/AGENTS.md` in `project-baseline`.
+WORKSPACE_DIR = REPO_ROOT.parent / "tokwiz-ab-demo"
 
 
 def _populate_sample_repo(target: Path) -> None:
