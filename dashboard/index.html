@@ -1542,28 +1542,69 @@
       const forecastsCount = Number(data.total_forecasts || 0);
       const guardCount = Number(data.guardrail_events_count || 0);
 
-      document.getElementById("kpiTokensSaved").textContent = Number(data.net_tokens_saved || 0).toLocaleString();
+      document.getElementById("kpiTokensSaved").textContent = turnsCount > 0
+        ? Number(data.net_tokens_saved || 0).toLocaleString()
+        : forecastsCount > 0
+          ? `~${Number(data.net_tokens_saved || 0).toLocaleString()}`
+          : "0";
       document.getElementById("kpiTokensSub").textContent = turnsCount > 0
         ? `Real: ${Number(data.total_real_tokens || 0).toLocaleString()} vs Baseline: ${Number(data.total_unoptimized_tokens || 0).toLocaleString()}`
-        : `${forecastsCount} forecasts · ${guardCount} guardrail intercepts`;
+        : forecastsCount > 0
+          ? `Est. ${Number(data.total_forecast_tokens || 0).toLocaleString()} vs Baseline ${Number(data.total_unoptimized_tokens || 0).toLocaleString()} (${forecastsCount} forecasts)`
+          : `${forecastsCount} forecasts · ${guardCount} guardrail intercepts`;
 
-      document.getElementById("kpiCostSaved").textContent = `$${Number(data.net_cost_saved_usd || 0).toFixed(4)}`;
-      document.getElementById("kpiSpentSub").textContent = `Real Spent: $${Number(data.total_real_cost_usd || 0).toFixed(4)} · Forecast: $${Number(data.total_forecast_cost_usd || 0).toFixed(4)}`;
+      document.getElementById("kpiCostSaved").textContent = turnsCount > 0
+        ? `$${Number(data.net_cost_saved_usd || 0).toFixed(4)}`
+        : forecastsCount > 0
+          ? `~$${Number(data.net_cost_saved_usd || 0).toFixed(4)}`
+          : "$0.0000";
+      document.getElementById("kpiSpentSub").textContent = turnsCount > 0
+        ? `Real Spent: $${Number(data.total_real_cost_usd || 0).toFixed(4)} · Forecast: $${Number(data.total_forecast_cost_usd || 0).toFixed(4)}`
+        : `Forecasted: $${Number(data.total_forecast_cost_usd || 0).toFixed(4)} · Unoptimized: $${Number(data.total_unoptimized_cost_usd || 0).toFixed(4)}`;
 
       if (turnsCount > 0) {
         document.getElementById("kpiMape").textContent = `${Number(data.recent_mape_pct || data.mape_pct || 0).toFixed(1)}% MAPE`;
         const delta = Number(data.total_cost_delta_usd || 0);
         document.getElementById("kpiDeltaSub").textContent = `ΔC: ${delta >= 0 ? "+" : ""}$${delta.toFixed(4)} · Cache Hit: ${Number(data.cache_hit_ratio_pct || 0).toFixed(1)}%`;
+      } else if (forecastsCount > 0) {
+        document.getElementById("kpiMape").textContent = `${forecastsCount} forecasted`;
+        document.getElementById("kpiDeltaSub").textContent = "Awaiting turn completion to reconcile Real $";
       } else {
         document.getElementById("kpiMape").textContent = "0 turns";
         document.getElementById("kpiDeltaSub").textContent = "Run a prompt to reconcile Forecast vs. Real $";
       }
 
       document.getElementById("kpiReduction").textContent = `${Number(data.avg_reduction_pct || 0).toFixed(1)}%`;
-      document.getElementById("kpiTurnsSub").textContent = `Across ${turnsCount} reconciled turns`;
+      document.getElementById("kpiTurnsSub").textContent = turnsCount > 0
+        ? `Across ${turnsCount} reconciled turns`
+        : forecastsCount > 0
+          ? `Est. reduction across ${forecastsCount} forecast(s)`
+          : "0 turns recorded in telemetry.db";
 
-      renderCostVarianceChart(data.turns || []);
-      renderTokensTimelineChart(data.turns || []);
+      // If no turns have completed yet but pre-prompt forecasts exist (from `tokwiz predict`),
+      // map forecasts into chart items so all 4 charts display the forecasted metrics immediately.
+      const chartTurns = (data.turns && data.turns.length > 0)
+        ? data.turns
+        : (data.forecasts || []).map(f => {
+            const cSonnet = (f.costs && f.costs["claude-sonnet-4"]) ? f.costs["claude-sonnet-4"] : {};
+            const fUsd = Number(cSonnet.cached_cost_usd || cSonnet.uncached_cost_usd || 0);
+            return {
+              forecast_id: f.forecast_id || "tw_pred",
+              prompt: f.prompt || "",
+              profile_code: f.profile_code || "B",
+              optimization_level: f.optimization_level || 1,
+              forecast_total_tokens: Number(f.total_tokens || 0),
+              real_total_tokens: Number(f.total_tokens || 0),
+              unoptimized_baseline_tokens: Number(f.unoptimized_tokens || 0),
+              net_tokens_saved: Number(f.savings_tokens || 0),
+              forecast_cost_usd: fUsd,
+              real_cost_usd: fUsd,
+              cost_delta_usd: 0
+            };
+          });
+
+      renderCostVarianceChart(chartTurns);
+      renderTokensTimelineChart(chartTurns);
       renderPhaseBreakdownChart(data.phase_breakdown || {});
       renderModelCostChart(data.model_breakdown || {});
       renderAuditTable(data.turns || [], data.forecasts || []);

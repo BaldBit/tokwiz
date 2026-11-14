@@ -13,6 +13,7 @@ import json
 import math
 import re
 import sys
+import time
 import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -420,6 +421,38 @@ class TokenEstimator:
         ]
         return "\n".join(lines)
 
+    def record_forecast(self, res: ForecastResult) -> None:
+        """Persist forecast to `.tokwiz/active-forecast.json` and `.tokwiz/forecasts.jsonl`."""
+        tokwiz_dir = self.root_dir / ".tokwiz"
+        tokwiz_dir.mkdir(parents=True, exist_ok=True)
+        d = asdict(res)
+        record = {
+            "forecast_id": d["forecast_id"],
+            "timestamp": time.time(),
+            "prompt": d["prompt"],
+            "profile_code": d["profile_code"],
+            "profile_name": d["profile_name"],
+            "optimization_level": d["optimization_level"],
+            "estimated_steps": d["estimated_steps"],
+            "blast_radius_files": d["blast_radius_files"],
+            "blast_radius_lines": d["blast_radius_lines"],
+            "prompt_tokens": d["prompt_tokens"],
+            "context_tokens": d["context_tokens"],
+            "tool_loop_tokens": d["tool_loop_tokens"],
+            "reasoning_tokens": d["reasoning_tokens"],
+            "output_tokens": d["output_tokens"],
+            "total_tokens": d["total_tokens"],
+            "unoptimized_tokens": d["unoptimized_tokens"],
+            "savings_tokens": d["savings_tokens"],
+            "savings_pct": d["savings_pct"],
+            "costs": d["costs"],
+        }
+        (tokwiz_dir / "active-forecast.json").write_text(
+            json.dumps(record, indent=2) + "\n", encoding="utf-8"
+        )
+        with open(tokwiz_dir / "forecasts.jsonl", "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record) + "\n")
+
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
@@ -430,6 +463,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--root", default=".", help="Repository root directory")
     parser.add_argument("--context-tokens", type=int, default=450, help="Existing conversation context tokens")
     parser.add_argument("--level", type=int, choices=[1, 2, 3], default=None, help="Force optimization level")
+    parser.add_argument("--no-record", action="store_true", help="Do not persist forecast to .tokwiz/forecasts.jsonl")
     parser.add_argument("--json", action="store_true", help="Output full JSON forecast")
     args = parser.parse_args(argv)
 
@@ -439,6 +473,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         context_tokens=args.context_tokens,
         forced_level=args.level,
     )
+    if not args.no_record:
+        estimator.record_forecast(res)
 
     if args.json:
         payload = asdict(res)
