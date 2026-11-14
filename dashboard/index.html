@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>TokWiz — 3D Codebase Graph & Real-Time Cost Analytics</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <style>
     :root {
       color-scheme: dark;
@@ -114,10 +115,10 @@
     .graph-header h2 { font-size: 1.05rem; font-weight: 700; }
     .graph-layout {
       display: grid;
-      grid-template-columns: 1fr 350px;
+      grid-template-columns: 1fr 370px;
       gap: 16px;
     }
-    @media (max-width: 1024px) {
+    @media (max-width: 1080px) {
       .graph-layout { grid-template-columns: 1fr; }
     }
     .graph-stage {
@@ -235,31 +236,62 @@
     }
     .pill:hover { background: rgba(56, 189, 248, 0.26); }
 
+    /* Sleek 2x2 Analytics Charts Grid */
     .charts-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
+      grid-template-columns: repeat(2, 1fr);
       gap: 18px;
       margin-bottom: 22px;
+    }
+    @media (max-width: 1100px) {
+      .charts-grid { grid-template-columns: 1fr; }
     }
     .chart-card {
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 18px 20px;
+      border-radius: 14px;
+      padding: 18px 22px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    }
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 12px;
     }
     .chart-card h2 {
-      font-size: 0.92rem;
+      font-size: 0.96rem;
       font-weight: 600;
-      margin-bottom: 12px;
       color: var(--text);
     }
-    .chart-card canvas { width: 100%; height: 220px; display: block; }
+    .chart-subtitle {
+      font-size: 0.76rem;
+      color: var(--muted);
+    }
+    .chart-viewport {
+      position: relative;
+      height: 270px;
+      width: 100%;
+    }
+    .chart-empty-overlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      place-items: center;
+      text-align: center;
+      padding: 20px;
+      color: var(--muted);
+      font-size: 0.84rem;
+      background: rgba(9, 14, 26, 0.72);
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+    }
 
     .table-card {
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 18px 20px;
+      border-radius: 14px;
+      padding: 18px 22px;
       overflow-x: auto;
     }
     .table-card h2 { font-size: 0.98rem; margin-bottom: 12px; }
@@ -380,27 +412,65 @@
           Click any 3D sphere in the graph (or search above) to inspect its exact <code>file:Lstart-Lend</code> range, PageRank score, callers, and callees.
         </div>
         <h3>Top PageRank Symbol Hubs</h3>
-        <canvas id="hubsChartCanvas" style="width:100%; height:220px;"></canvas>
+        <div style="position:relative; height:225px; width:100%;">
+          <canvas id="hubsChartCanvas"></canvas>
+        </div>
       </aside>
     </div>
   </section>
 
+  <!-- Sleek Chart.js Analytics Charts with Full X & Y Axes -->
   <section class="charts-grid" aria-label="Analytics Charts">
     <div class="chart-card">
-      <h2>Forecasted Cost vs. Real Billed Cost per Prompt (Dual-Line & Residual Error)</h2>
-      <canvas id="costVarianceCanvas"></canvas>
+      <div class="chart-header">
+        <h2>Forecasted Cost vs. Real Billed Cost per Prompt</h2>
+        <span class="chart-subtitle">Dual-Line & Residual Error (ΔC in $ USD)</span>
+      </div>
+      <div class="chart-viewport">
+        <canvas id="costVarianceCanvas"></canvas>
+        <div class="chart-empty-overlay" id="costVarianceEmpty">
+          No reconciled turns yet — run a prompt in this workspace (or click "Preview Sample Session" above) to chart Forecast vs. Real $.
+        </div>
+      </div>
     </div>
+
     <div class="chart-card">
-      <h2>Unoptimized Baseline vs. TokWiz Workflow Tokens</h2>
-      <canvas id="tokensTimelineCanvas"></canvas>
+      <div class="chart-header">
+        <h2>Unoptimized Baseline vs. TokWiz Workflow Tokens</h2>
+        <span class="chart-subtitle">Per-Turn Token Consumption Comparison</span>
+      </div>
+      <div class="chart-viewport">
+        <canvas id="tokensTimelineCanvas"></canvas>
+        <div class="chart-empty-overlay" id="tokensTimelineEmpty">
+          No turns recorded yet — token savings bars appear after your first turn completes.
+        </div>
+      </div>
     </div>
+
     <div class="chart-card">
-      <h2>Token Breakdown by Phase (Context, Graph, Tool Output, Reasoning, Output)</h2>
-      <canvas id="phaseBreakdownCanvas"></canvas>
+      <div class="chart-header">
+        <h2>Token Breakdown by Execution Phase</h2>
+        <span class="chart-subtitle">Context, Graph Slice, Tool Output, Reasoning & Output</span>
+      </div>
+      <div class="chart-viewport">
+        <canvas id="phaseBreakdownCanvas"></canvas>
+        <div class="chart-empty-overlay" id="phaseBreakdownEmpty">
+          Waiting for live turn telemetry to break down Context, Graph, Tool, and Output tokens.
+        </div>
+      </div>
     </div>
+
     <div class="chart-card">
-      <h2>Model Cost Comparison (Real Billed vs. Net Saved $)</h2>
-      <canvas id="modelCostCanvas"></canvas>
+      <div class="chart-header">
+        <h2>Model Cost Comparison (Forecasted vs. Real vs. Saved $)</h2>
+        <span class="chart-subtitle">Cross-Provider Spend & Savings ($ USD)</span>
+      </div>
+      <div class="chart-viewport">
+        <canvas id="modelCostCanvas"></canvas>
+        <div class="chart-empty-overlay" id="modelCostEmpty">
+          No model billing records yet in this workspace.
+        </div>
+      </div>
     </div>
   </section>
 
@@ -481,7 +551,7 @@
       const dpr = window.devicePixelRatio || 1;
       const rect = canvas.getBoundingClientRect();
       const cssW = Math.max(200, Math.round(rect.width || 600));
-      const cssH = Math.max(150, Math.round(rect.height || 220));
+      const cssH = Math.max(150, Math.round(rect.height || 240));
       if (canvas.width !== cssW * dpr || canvas.height !== cssH * dpr) {
         canvas.width = cssW * dpr;
         canvas.height = cssH * dpr;
@@ -503,7 +573,7 @@
       yaw: 0.45,
       pitch: 0.25,
       zoom: 1.0,
-      autoRotate: false, // Static by default so nodes are crisp and easy to inspect
+      autoRotate: false,
       isDragging: false,
       dragMoved: false,
       lastMouseX: 0,
@@ -521,7 +591,6 @@
         e => nodeIds.has(e.source) && nodeIds.has(e.target)
       );
 
-      // Place every node on a well-spaced 3D Fibonacci sphere first, grouped by file cluster
       const filesList = [...new Set(rawNodes.map(n => n.file_path))];
       const fileCenters = new Map();
       filesList.forEach((fp, idx) => {
@@ -535,7 +604,6 @@
         });
       });
 
-      // Group symbols per file so each symbol in a file gets a distinct 3D satellite angle
       const fileIndexCount = new Map();
       graph3D.nodes = rawNodes.map((n) => {
         const fc = fileCenters.get(n.file_path) || { x: 0, y: 0, z: 0 };
@@ -555,7 +623,6 @@
           };
         }
 
-        // Distribute symbols on a 3D sub-sphere around their file hub
         const subPhi = Math.acos(1 - 2 * ((idxInFile % 16) + 0.5) / 16);
         const subTheta = Math.PI * (1 + Math.sqrt(5)) * idxInFile;
         const subRadius = n.kind === "class" ? 55 : 92;
@@ -574,10 +641,8 @@
 
       graph3D.edges = edges;
 
-      // Run 60 iterations of 3D Force-Directed Physics (with fixed dz * dz math!)
       const nodeMap = new Map(graph3D.nodes.map(n => [n.id, n]));
       for (let step = 0; step < 60; step++) {
-        // 3D Coulomb repulsion so no two spheres ever stack on top of each other
         for (let i = 0; i < graph3D.nodes.length; i++) {
           for (let j = i + 1; j < graph3D.nodes.length; j++) {
             const a = graph3D.nodes[i];
@@ -597,7 +662,6 @@
             }
           }
         }
-        // 3D Hooke spring attraction along edges
         for (const e of graph3D.edges) {
           const s = nodeMap.get(e.source);
           const t = nodeMap.get(e.target);
@@ -614,7 +678,6 @@
           s.vx += fx; s.vy += fy; s.vz += fz;
           t.vx -= fx; t.vy -= fy; t.vz -= fz;
         }
-        // Mild centering gravity + velocity damping
         for (const n of graph3D.nodes) {
           n.vx = (n.vx - n.x * 0.008) * 0.72;
           n.vy = (n.vy - n.y * 0.008) * 0.72;
@@ -625,7 +688,6 @@
         }
       }
 
-      // Normalize 3D bounding sphere to radius ~210 so it always fills the 3D viewport cleanly
       let maxR = 1;
       for (const n of graph3D.nodes) {
         const r = Math.hypot(n.x, n.y, n.z);
@@ -647,7 +709,7 @@
         draw3DScene();
       }
 
-      drawHubsChart(graphData.top_hubs || []);
+      renderHubsChart(graphData.top_hubs || []);
     }
 
     function project3DPoint(x, y, z, cx, cy) {
@@ -656,7 +718,6 @@
       const cosP = Math.cos(graph3D.pitch);
       const sinP = Math.sin(graph3D.pitch);
 
-      // Rotate around Y axis (yaw), then X axis (pitch)
       const x1 = x * cosY - z * sinY;
       const z1 = z * cosY + x * sinY;
       const y2 = y * cosP - z1 * sinP;
@@ -683,7 +744,6 @@
 
       ctx.clearRect(0, 0, W, H);
 
-      // Draw subtle 3D equatorial and meridian reference rings
       ctx.save();
       const ringRadius = 225;
       ctx.beginPath();
@@ -707,7 +767,6 @@
       ctx.stroke();
       ctx.restore();
 
-      // Project all nodes
       graph3D.projected.clear();
       for (const n of graph3D.nodes) {
         const proj = project3DPoint(n.x, n.y, n.z, cx, cy);
@@ -728,7 +787,6 @@
         }
       }
 
-      // Draw 3D edges
       for (const e of graph3D.edges) {
         if (graph3D.edgeFilter !== "ALL") {
           if (graph3D.edgeFilter === "CALLS" && e.type !== "CALLS" && e.type !== "INHERITS") continue;
@@ -757,7 +815,6 @@
         }
         ctx.stroke();
 
-        // Draw directional arrowhead on active CALLS edges
         if (isActive && e.type === "CALLS") {
           const mx = ps.sx + (pt.sx - ps.sx) * 0.65;
           const my = ps.sy + (pt.sy - ps.sy) * 0.65;
@@ -768,11 +825,8 @@
         }
       }
 
-      // Depth-sort nodes back-to-front (largest z is furthest from camera)
       const sortedProj = [...graph3D.projected.values()].sort((a, b) => b.z - a.z);
       const searchLow = graph3D.searchTerm.toLowerCase();
-
-      // Track label bounding boxes so labels NEVER overlap into a blurry pile
       const placedLabelBoxes = [];
 
       for (const item of sortedProj) {
@@ -793,7 +847,6 @@
         ctx.save();
         ctx.globalAlpha = alpha;
 
-        // 3D Shaded Sphere with crisp Specular Highlight
         const grad = ctx.createRadialGradient(
           item.sx - item.r * 0.35,
           item.sy - item.r * 0.35,
@@ -820,7 +873,6 @@
         ctx.restore();
       }
 
-      // Second pass front-to-back for crisp, collision-free labels
       const frontToBack = [...sortedProj].reverse();
       for (const item of frontToBack) {
         const n = item.node;
@@ -842,7 +894,6 @@
         const ly = Math.round(item.sy - 9);
         const box = { x1: lx - 4, y1: ly, x2: lx + textW + 6, y2: ly + boxH };
 
-        // Skip non-selected labels that would collide with a closer label
         if (!isSelected && !isHovered) {
           const collides = placedLabelBoxes.some(
             b => !(box.x2 < b.x1 || box.x1 > b.x2 || box.y2 < b.y1 || box.y1 > b.y2)
@@ -1069,34 +1120,388 @@
       });
     }
 
-    function drawHubsChart(hubs) {
-      const canvas = document.getElementById("hubsChartCanvas");
-      const { ctx, width: W, height: H } = setupHiDPICanvas(canvas);
-      ctx.clearRect(0, 0, W, H);
+    /* ==================== SLEEK CHART.JS ENGINE WITH X & Y AXES ==================== */
+    const chartInstances = {
+      hubs: null,
+      costVariance: null,
+      tokensTimeline: null,
+      phaseBreakdown: null,
+      modelCost: null
+    };
+
+    const GRID_COLOR = "rgba(30, 44, 71, 0.65)";
+    const TICK_COLOR = "#8b9dc3";
+
+    if (window.Chart) {
+      Chart.defaults.color = TICK_COLOR;
+      Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif';
+      Chart.defaults.font.size = 11.5;
+    }
+
+    function destroyChart(key) {
+      if (chartInstances[key]) {
+        chartInstances[key].destroy();
+        chartInstances[key] = null;
+      }
+    }
+
+    function renderHubsChart(hubs) {
       const top = hubs.slice(0, 7);
-      if (!top.length) return;
+      const canvas = document.getElementById("hubsChartCanvas");
+      destroyChart("hubs");
+      if (!window.Chart || !top.length) return;
 
-      const maxPr = Math.max(0.1, ...top.map(h => h.pagerank));
-      const rowH = H / top.length;
-
-      top.forEach((h, i) => {
-        const y = i * rowH;
-        const bw = (h.pagerank / maxPr) * (W - 165);
-        ctx.fillStyle = "#eef2ff";
-        ctx.font = "11.5px -apple-system, sans-serif";
-        ctx.fillText(h.name.slice(0, 18), 4, y + rowH * 0.65);
-
-        ctx.fillStyle = KIND_COLORS[h.kind] || "#38bdf8";
-        ctx.beginPath();
-        ctx.roundRect(122, y + 6, Math.max(6, bw), rowH - 12, 4);
-        ctx.fill();
-
-        ctx.fillStyle = "#8b9dc3";
-        ctx.fillText(h.pagerank.toFixed(1), 128 + bw, y + rowH * 0.65);
+      chartInstances.hubs = new Chart(canvas, {
+        type: "bar",
+        data: {
+          labels: top.map(h => h.name),
+          datasets: [{
+            label: "PageRank Score",
+            data: top.map(h => h.pagerank),
+            backgroundColor: top.map(h => KIND_COLORS[h.kind] || "#38bdf8"),
+            borderRadius: 5,
+            barThickness: 14
+          }]
+        },
+        options: {
+          indexAxis: "y",
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: "#090e1a",
+              borderColor: "#1e2c47",
+              borderWidth: 1,
+              callbacks: {
+                label: (ctx) => ` PageRank Score: ${ctx.parsed.x.toFixed(2)}`
+              }
+            }
+          },
+          scales: {
+            x: {
+              beginAtZero: true,
+              grid: { color: GRID_COLOR },
+              ticks: { color: TICK_COLOR },
+              title: { display: true, text: "PageRank Centrality Score", color: TICK_COLOR, font: { size: 10.5 } }
+            },
+            y: {
+              grid: { display: false },
+              ticks: { color: "#eef2ff", font: { weight: "600", size: 11 } }
+            }
+          }
+        }
       });
     }
 
-    /* ==================== TELEMETRY & CHARTS ==================== */
+    function renderCostVarianceChart(turns) {
+      const emptyEl = document.getElementById("costVarianceEmpty");
+      const canvas = document.getElementById("costVarianceCanvas");
+      destroyChart("costVariance");
+
+      if (!turns.length || !window.Chart) {
+        emptyEl.style.display = "grid";
+        return;
+      }
+      emptyEl.style.display = "none";
+
+      const labels = turns.map((t, i) => `T${i + 1} (${t.forecast_id.slice(-4)})`);
+      const forecastVals = turns.map(t => Number(t.forecast_cost_usd || 0));
+      const realVals = turns.map(t => Number(t.real_cost_usd || 0));
+      const deltaVals = turns.map(t => Number((t.real_cost_usd - t.forecast_cost_usd).toFixed(5)));
+
+      chartInstances.costVariance = new Chart(canvas, {
+        data: {
+          labels,
+          datasets: [
+            {
+              type: "line",
+              label: "Forecasted Cost ($)",
+              data: forecastVals,
+              borderColor: "#38bdf8",
+              backgroundColor: "rgba(56, 189, 248, 0.14)",
+              borderWidth: 2.5,
+              pointRadius: 4.5,
+              pointHoverRadius: 7,
+              pointBackgroundColor: "#38bdf8",
+              tension: 0.35,
+              fill: true
+            },
+            {
+              type: "line",
+              label: "Real Billed Cost ($)",
+              data: realVals,
+              borderColor: "#34d399",
+              backgroundColor: "rgba(52, 211, 153, 0.10)",
+              borderWidth: 2.5,
+              pointRadius: 4.5,
+              pointHoverRadius: 7,
+              pointBackgroundColor: "#34d399",
+              tension: 0.35,
+              fill: true
+            },
+            {
+              type: "bar",
+              label: "Residual Error ΔC ($)",
+              data: deltaVals,
+              backgroundColor: deltaVals.map(v => v > 0 ? "rgba(251, 113, 133, 0.55)" : "rgba(167, 139, 250, 0.55)"),
+              borderRadius: 4,
+              barPercentage: 0.35
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: {
+              position: "top",
+              labels: { color: "#eef2ff", usePointStyle: true, boxWidth: 8 }
+            },
+            tooltip: {
+              backgroundColor: "#090e1a",
+              borderColor: "#1e2c47",
+              borderWidth: 1,
+              callbacks: {
+                label: (ctx) => ` ${ctx.dataset.label}: $${Number(ctx.parsed.y).toFixed(4)}`
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { color: GRID_COLOR },
+              ticks: { color: "#eef2ff" },
+              title: { display: true, text: "Prompt Turn (ID)", color: TICK_COLOR }
+            },
+            y: {
+              grid: { color: GRID_COLOR },
+              ticks: {
+                color: TICK_COLOR,
+                callback: (val) => `$${Number(val).toFixed(3)}`
+              },
+              title: { display: true, text: "Cost ($ USD)", color: TICK_COLOR }
+            }
+          }
+        }
+      });
+    }
+
+    function renderTokensTimelineChart(turns) {
+      const emptyEl = document.getElementById("tokensTimelineEmpty");
+      const canvas = document.getElementById("tokensTimelineCanvas");
+      destroyChart("tokensTimeline");
+
+      if (!turns.length || !window.Chart) {
+        emptyEl.style.display = "grid";
+        return;
+      }
+      emptyEl.style.display = "none";
+
+      const labels = turns.map((t, i) => `T${i + 1} [P-${t.profile_code}]`);
+      chartInstances.tokensTimeline = new Chart(canvas, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [
+            {
+              label: "Unoptimized Baseline Tokens",
+              data: turns.map(t => t.unoptimized_baseline_tokens),
+              backgroundColor: "rgba(251, 113, 133, 0.68)",
+              borderColor: "#fb7185",
+              borderWidth: 1,
+              borderRadius: 6
+            },
+            {
+              label: "Real TokWiz Workflow Tokens",
+              data: turns.map(t => t.real_total_tokens),
+              backgroundColor: "rgba(52, 211, 153, 0.82)",
+              borderColor: "#34d399",
+              borderWidth: 1,
+              borderRadius: 6
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: {
+              position: "top",
+              labels: { color: "#eef2ff", usePointStyle: true, boxWidth: 8 }
+            },
+            tooltip: {
+              backgroundColor: "#090e1a",
+              borderColor: "#1e2c47",
+              borderWidth: 1,
+              callbacks: {
+                label: (ctx) => ` ${ctx.dataset.label}: ${Number(ctx.parsed.y).toLocaleString()} tokens`
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { color: GRID_COLOR },
+              ticks: { color: "#eef2ff" },
+              title: { display: true, text: "Prompt Turn & Complexity Profile", color: TICK_COLOR }
+            },
+            y: {
+              beginAtZero: true,
+              grid: { color: GRID_COLOR },
+              ticks: {
+                color: TICK_COLOR,
+                callback: (val) => `${(Number(val) / 1000).toFixed(0)}k`
+              },
+              title: { display: true, text: "Token Count", color: TICK_COLOR }
+            }
+          }
+        }
+      });
+    }
+
+    function renderPhaseBreakdownChart(phases) {
+      const emptyEl = document.getElementById("phaseBreakdownEmpty");
+      const canvas = document.getElementById("phaseBreakdownCanvas");
+      destroyChart("phaseBreakdown");
+
+      const total = Object.values(phases).reduce((acc, v) => acc + Number(v || 0), 0);
+      if (total === 0 || !window.Chart) {
+        emptyEl.style.display = "grid";
+        return;
+      }
+      emptyEl.style.display = "none";
+
+      const entries = [
+        ["Context Input", phases.context_input || 0, "#38bdf8"],
+        ["Graph & Skill", phases.graph_skill || 0, "#a78bfa"],
+        ["Tool Output", phases.tool_output || 0, "#34d399"],
+        ["Reasoning", phases.reasoning || 0, "#fbbf24"],
+        ["Model Output", phases.output || 0, "#fb7185"]
+      ];
+
+      chartInstances.phaseBreakdown = new Chart(canvas, {
+        type: "bar",
+        data: {
+          labels: entries.map(e => e[0]),
+          datasets: [{
+            label: "Tokens by Phase",
+            data: entries.map(e => e[1]),
+            backgroundColor: entries.map(e => e[2]),
+            borderRadius: 6,
+            barThickness: 22
+          }]
+        },
+        options: {
+          indexAxis: "y",
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: "#090e1a",
+              borderColor: "#1e2c47",
+              borderWidth: 1,
+              callbacks: {
+                label: (ctx) => ` ${Number(ctx.parsed.x).toLocaleString()} tokens (${((ctx.parsed.x / total) * 100).toFixed(1)}%)`
+              }
+            }
+          },
+          scales: {
+            x: {
+              beginAtZero: true,
+              grid: { color: GRID_COLOR },
+              ticks: {
+                color: TICK_COLOR,
+                callback: (val) => Number(val).toLocaleString()
+              },
+              title: { display: true, text: "Tokens Consumed", color: TICK_COLOR }
+            },
+            y: {
+              grid: { display: false },
+              ticks: { color: "#eef2ff", font: { weight: "600" } },
+              title: { display: true, text: "Execution Phase", color: TICK_COLOR }
+            }
+          }
+        }
+      });
+    }
+
+    function renderModelCostChart(models) {
+      const emptyEl = document.getElementById("modelCostEmpty");
+      const canvas = document.getElementById("modelCostCanvas");
+      destroyChart("modelCost");
+
+      const keys = Object.keys(models);
+      if (!keys.length || !window.Chart) {
+        emptyEl.style.display = "grid";
+        return;
+      }
+      emptyEl.style.display = "none";
+
+      chartInstances.modelCost = new Chart(canvas, {
+        type: "bar",
+        data: {
+          labels: keys,
+          datasets: [
+            {
+              label: "Forecasted Cost ($)",
+              data: keys.map(k => models[k].forecast_cost_usd || 0),
+              backgroundColor: "rgba(167, 139, 250, 0.75)",
+              borderRadius: 6
+            },
+            {
+              label: "Real Billed Cost ($)",
+              data: keys.map(k => models[k].real_cost_usd || 0),
+              backgroundColor: "rgba(56, 189, 248, 0.85)",
+              borderRadius: 6
+            },
+            {
+              label: "Net Saved ($)",
+              data: keys.map(k => models[k].saved_cost_usd || 0),
+              backgroundColor: "rgba(52, 211, 153, 0.85)",
+              borderRadius: 6
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: {
+              position: "top",
+              labels: { color: "#eef2ff", usePointStyle: true, boxWidth: 8 }
+            },
+            tooltip: {
+              backgroundColor: "#090e1a",
+              borderColor: "#1e2c47",
+              borderWidth: 1,
+              callbacks: {
+                label: (ctx) => ` ${ctx.dataset.label}: $${Number(ctx.parsed.y).toFixed(4)}`
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { color: GRID_COLOR },
+              ticks: { color: "#eef2ff", font: { weight: "600" } },
+              title: { display: true, text: "AI Model / Provider", color: TICK_COLOR }
+            },
+            y: {
+              beginAtZero: true,
+              grid: { color: GRID_COLOR },
+              ticks: {
+                color: TICK_COLOR,
+                callback: (val) => `$${Number(val).toFixed(3)}`
+              },
+              title: { display: true, text: "Cumulative Cost ($ USD)", color: TICK_COLOR }
+            }
+          }
+        }
+      });
+    }
+
     function renderDashboard(data, isDemoMode) {
       const badge = document.getElementById("modeBadge");
       if (isDemoMode) {
@@ -1131,190 +1536,11 @@
       document.getElementById("kpiReduction").textContent = `${Number(data.avg_reduction_pct || 0).toFixed(1)}%`;
       document.getElementById("kpiTurnsSub").textContent = `Across ${turnsCount} reconciled turns`;
 
-      drawCostVarianceChart(data.turns || []);
-      drawTokensTimelineChart(data.turns || []);
-      drawPhaseBreakdownChart(data.phase_breakdown || {});
-      drawModelCostChart(data.model_breakdown || {});
+      renderCostVarianceChart(data.turns || []);
+      renderTokensTimelineChart(data.turns || []);
+      renderPhaseBreakdownChart(data.phase_breakdown || {});
+      renderModelCostChart(data.model_breakdown || {});
       renderAuditTable(data.turns || [], data.forecasts || []);
-    }
-
-    function drawEmptyCanvasNotice(canvas, message) {
-      const { ctx, width: W, height: H } = setupHiDPICanvas(canvas);
-      ctx.clearRect(0, 0, W, H);
-      ctx.strokeStyle = "#1e2c47";
-      ctx.strokeRect(12, 12, W - 24, H - 24);
-      ctx.fillStyle = "#8b9dc3";
-      ctx.font = "12.5px -apple-system, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText(message, W / 2, H / 2);
-      ctx.textAlign = "left";
-    }
-
-    function drawCostVarianceChart(turns) {
-      const canvas = document.getElementById("costVarianceCanvas");
-      if (!turns.length) {
-        drawEmptyCanvasNotice(canvas, "No reconciled turns yet — run a prompt in this workspace to chart Forecast vs. Real $.");
-        return;
-      }
-      const { ctx, width: W, height: H } = setupHiDPICanvas(canvas);
-      ctx.clearRect(0, 0, W, H);
-
-      const pad = { l: 52, r: 20, t: 22, b: 30 };
-      const w = W - pad.l - pad.r;
-      const h = H - pad.t - pad.b;
-      const maxCost = Math.max(0.001, ...turns.map(t => Math.max(t.forecast_cost_usd, t.real_cost_usd) * 1.15));
-
-      ctx.strokeStyle = "#1e2c47";
-      ctx.beginPath();
-      ctx.moveTo(pad.l, pad.t);
-      ctx.lineTo(pad.l, pad.t + h);
-      ctx.lineTo(pad.l + w, pad.t + h);
-      ctx.stroke();
-
-      const stepX = turns.length > 1 ? w / (turns.length - 1) : w / 2;
-
-      turns.forEach((t, i) => {
-        const x = pad.l + i * stepX;
-        const yF = pad.t + h - (t.forecast_cost_usd / maxCost) * h;
-        const yR = pad.t + h - (t.real_cost_usd / maxCost) * h;
-        ctx.strokeStyle = t.real_cost_usd > t.forecast_cost_usd ? "rgba(251, 113, 133, 0.55)" : "rgba(52, 211, 153, 0.55)";
-        ctx.lineWidth = 6;
-        ctx.beginPath();
-        ctx.moveTo(x, yF);
-        ctx.lineTo(x, yR);
-        ctx.stroke();
-      });
-
-      ctx.strokeStyle = "#38bdf8";
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      turns.forEach((t, i) => {
-        const x = pad.l + i * stepX;
-        const y = pad.t + h - (t.forecast_cost_usd / maxCost) * h;
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      });
-      ctx.stroke();
-
-      ctx.strokeStyle = "#34d399";
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      turns.forEach((t, i) => {
-        const x = pad.l + i * stepX;
-        const y = pad.t + h - (t.real_cost_usd / maxCost) * h;
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      });
-      ctx.stroke();
-
-      ctx.fillStyle = "#8b9dc3";
-      ctx.font = "11px -apple-system, sans-serif";
-      ctx.fillText("Blue: Forecasted $   Green: Real Billed $   Bars: Residual Error (ΔC)", pad.l + 8, pad.t + 12);
-    }
-
-    function drawTokensTimelineChart(turns) {
-      const canvas = document.getElementById("tokensTimelineCanvas");
-      if (!turns.length) {
-        drawEmptyCanvasNotice(canvas, "No turns recorded yet — token savings bars appear after your first turn completes.");
-        return;
-      }
-      const { ctx, width: W, height: H } = setupHiDPICanvas(canvas);
-      ctx.clearRect(0, 0, W, H);
-
-      const pad = { l: 52, r: 20, t: 22, b: 30 };
-      const w = W - pad.l - pad.r;
-      const h = H - pad.t - pad.b;
-      const maxTok = Math.max(100, ...turns.map(t => t.unoptimized_baseline_tokens * 1.1));
-      const barGroupW = w / turns.length;
-
-      turns.forEach((t, i) => {
-        const xBase = pad.l + i * barGroupW + barGroupW * 0.18;
-        const bw = Math.max(10, barGroupW * 0.28);
-        const hUnopt = (t.unoptimized_baseline_tokens / maxTok) * h;
-        const hReal = (t.real_total_tokens / maxTok) * h;
-
-        ctx.fillStyle = "rgba(251, 113, 133, 0.45)";
-        ctx.fillRect(xBase, pad.t + h - hUnopt, bw, hUnopt);
-
-        ctx.fillStyle = "#34d399";
-        ctx.fillRect(xBase + bw + 4, pad.t + h - hReal, bw, hReal);
-      });
-
-      ctx.fillStyle = "#8b9dc3";
-      ctx.font = "11px -apple-system, sans-serif";
-      ctx.fillText("Red: Unoptimized Baseline Tokens   Green: Real TokWiz Workflow Tokens", pad.l + 8, pad.t + 12);
-    }
-
-    function drawPhaseBreakdownChart(phases) {
-      const canvas = document.getElementById("phaseBreakdownCanvas");
-      const total = Object.values(phases).reduce((acc, v) => acc + Number(v || 0), 0);
-      if (total === 0) {
-        drawEmptyCanvasNotice(canvas, "Waiting for live turn telemetry to break down Context, Graph, Tool, and Output tokens.");
-        return;
-      }
-      const { ctx, width: W, height: H } = setupHiDPICanvas(canvas);
-      ctx.clearRect(0, 0, W, H);
-
-      const entries = [
-        ["Context Input", phases.context_input || 0, "#38bdf8"],
-        ["Graph & Skill", phases.graph_skill || 0, "#a78bfa"],
-        ["Tool Output", phases.tool_output || 0, "#34d399"],
-        ["Reasoning", phases.reasoning || 0, "#fbbf24"],
-        ["Model Output", phases.output || 0, "#fb7185"]
-      ];
-      const maxVal = Math.max(1, ...entries.map(e => e[1]));
-      const pad = { l: 110, r: 65, t: 18, b: 18 };
-      const w = W - pad.l - pad.r;
-      const rowH = (H - pad.t - pad.b) / entries.length;
-
-      entries.forEach(([label, val, color], idx) => {
-        const y = pad.t + idx * rowH;
-        const bw = (val / maxVal) * w;
-        ctx.fillStyle = "#eef2ff";
-        ctx.font = "12px -apple-system, sans-serif";
-        ctx.fillText(label, 12, y + rowH * 0.62);
-
-        ctx.fillStyle = color;
-        ctx.fillRect(pad.l, y + 6, Math.max(4, bw), rowH - 12);
-
-        ctx.fillStyle = "#8b9dc3";
-        ctx.fillText(Number(val).toLocaleString(), pad.l + bw + 8, y + rowH * 0.62);
-      });
-    }
-
-    function drawModelCostChart(models) {
-      const canvas = document.getElementById("modelCostCanvas");
-      const keys = Object.keys(models);
-      if (!keys.length) {
-        drawEmptyCanvasNotice(canvas, "No model billing records yet in this workspace.");
-        return;
-      }
-      const { ctx, width: W, height: H } = setupHiDPICanvas(canvas);
-      ctx.clearRect(0, 0, W, H);
-
-      const pad = { l: 130, r: 50, t: 24, b: 20 };
-      const w = W - pad.l - pad.r;
-      const rowH = (H - pad.t - pad.b) / keys.length;
-      const maxUsd = Math.max(0.0001, ...keys.map(k => Math.max(models[k].real_cost_usd, models[k].saved_cost_usd)));
-
-      keys.forEach((k, idx) => {
-        const m = models[k];
-        const y = pad.t + idx * rowH;
-        ctx.fillStyle = "#eef2ff";
-        ctx.font = "12px -apple-system, sans-serif";
-        ctx.fillText(k, 12, y + rowH * 0.55);
-
-        const wReal = (m.real_cost_usd / maxUsd) * w;
-        const wSaved = (m.saved_cost_usd / maxUsd) * w;
-
-        ctx.fillStyle = "#38bdf8";
-        ctx.fillRect(pad.l, y + 6, Math.max(4, wReal), (rowH - 16) / 2);
-
-        ctx.fillStyle = "#34d399";
-        ctx.fillRect(pad.l, y + 8 + (rowH - 16) / 2, Math.max(4, wSaved), (rowH - 16) / 2);
-      });
-
-      ctx.fillStyle = "#8b9dc3";
-      ctx.font = "11px -apple-system, sans-serif";
-      ctx.fillText("Blue: Real Billed $   Green: Net Saved $", pad.l, 14);
     }
 
     function renderAuditTable(turns, forecasts) {
