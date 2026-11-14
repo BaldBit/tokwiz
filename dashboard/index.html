@@ -27,6 +27,7 @@
       padding: 22px 28px;
       line-height: 1.5;
       min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
     }
     header {
       display: flex;
@@ -88,7 +89,6 @@
       border: 1px solid var(--border);
       border-radius: 12px;
       padding: 15px 18px;
-      backdrop-filter: blur(8px);
     }
     .kpi-label { font-size: 0.73rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
     .kpi-value { font-size: 1.55rem; font-weight: 700; margin: 5px 0 3px; font-variant-numeric: tabular-nums; }
@@ -126,7 +126,7 @@
       border-radius: 12px;
       position: relative;
       overflow: hidden;
-      height: 540px;
+      height: 560px;
     }
     #projectGraphCanvas {
       width: 100%;
@@ -143,9 +143,9 @@
       display: flex;
       gap: 8px;
       pointer-events: none;
-      font-size: 0.75rem;
+      font-size: 0.76rem;
       color: var(--muted);
-      background: rgba(7, 11, 18, 0.78);
+      background: rgba(7, 11, 18, 0.85);
       padding: 6px 12px;
       border-radius: 8px;
       border: 1px solid var(--border);
@@ -164,8 +164,8 @@
       padding: 0;
       display: grid;
       place-items: center;
-      font-size: 1rem;
-      background: rgba(14, 21, 37, 0.9);
+      font-size: 1.05rem;
+      background: rgba(14, 21, 37, 0.92);
     }
     .graph-legend {
       position: absolute;
@@ -174,11 +174,11 @@
       display: flex;
       gap: 14px;
       flex-wrap: wrap;
-      background: rgba(7, 11, 18, 0.85);
+      background: rgba(7, 11, 18, 0.88);
       padding: 7px 14px;
       border-radius: 999px;
       border: 1px solid var(--border);
-      font-size: 0.75rem;
+      font-size: 0.76rem;
       color: var(--text);
     }
     .legend-dot {
@@ -188,7 +188,6 @@
       border-radius: 50%;
       margin-right: 6px;
       vertical-align: middle;
-      box-shadow: 0 0 8px currentColor;
     }
     .graph-sidebar {
       background: var(--card-alt);
@@ -342,7 +341,7 @@
   <section class="graph-section" aria-label="3D Rotatable Project Graph Visualizer">
     <div class="graph-header">
       <div>
-        <h2>🌐 3D Interactive Project Graph (Drag to Rotate 360° · Scroll to Zoom · Click Node to Inspect)</h2>
+        <h2>🌐 3D Interactive Project Graph (Drag to Rotate 360° · Scroll to Zoom · Click Sphere to Inspect)</h2>
       </div>
       <div class="controls">
         <input type="search" id="graphSearchInput" placeholder="Search function, class, or file..." />
@@ -352,27 +351,26 @@
           <option value="DEFINES">DEFINES Only</option>
           <option value="IMPORTS">IMPORTS Only</option>
         </select>
-        <button id="autoRotateBtn" type="button" class="active">Auto-Orbit: ON</button>
+        <button id="autoRotateBtn" type="button">Auto-Orbit: OFF</button>
         <button id="resetCameraBtn" type="button">Reset 3D View</button>
       </div>
     </div>
 
     <div class="graph-layout">
       <div class="graph-stage" id="graphStage">
-        <canvas id="projectGraphCanvas" width="960" height="540"></canvas>
+        <canvas id="projectGraphCanvas"></canvas>
         <div class="graph-hud-top">
-          <span>🖱️ Left-Drag: Rotate 3D Orbit · Scroll: Zoom · Click Sphere: Inspect Symbol & 1-Hop Neighborhood</span>
+          <span>🖱️ Drag: Rotate 3D Orbit · Scroll: Zoom · Click Sphere: Inspect Symbol & 1-Hop Callers/Callees</span>
         </div>
         <div class="graph-zoom-controls">
           <button id="zoomInBtn" type="button" title="Zoom In">+</button>
           <button id="zoomOutBtn" type="button" title="Zoom Out">−</button>
         </div>
         <div class="graph-legend">
-          <span><i class="legend-dot" style="background:#38bdf8; color:#38bdf8"></i>File Hub</span>
-          <span><i class="legend-dot" style="background:#a78bfa; color:#a78bfa"></i>Class / Interface</span>
-          <span><i class="legend-dot" style="background:#34d399; color:#34d399"></i>Function</span>
-          <span><i class="legend-dot" style="background:#fbbf24; color:#fbbf24"></i>Method</span>
-          <span style="color:var(--emerald)">● Animated Pulses = CALLS Direction</span>
+          <span><i class="legend-dot" style="background:#38bdf8"></i>File Hub</span>
+          <span><i class="legend-dot" style="background:#a78bfa"></i>Class / Interface</span>
+          <span><i class="legend-dot" style="background:#34d399"></i>Function</span>
+          <span><i class="legend-dot" style="background:#fbbf24"></i>Method</span>
         </div>
       </div>
 
@@ -382,7 +380,7 @@
           Click any 3D sphere in the graph (or search above) to inspect its exact <code>file:Lstart-Lend</code> range, PageRank score, callers, and callees.
         </div>
         <h3>Top PageRank Symbol Hubs</h3>
-        <canvas id="hubsChartCanvas" width="315" height="210" style="height:210px;"></canvas>
+        <canvas id="hubsChartCanvas" style="width:100%; height:220px;"></canvas>
       </aside>
     </div>
   </section>
@@ -390,19 +388,19 @@
   <section class="charts-grid" aria-label="Analytics Charts">
     <div class="chart-card">
       <h2>Forecasted Cost vs. Real Billed Cost per Prompt (Dual-Line & Residual Error)</h2>
-      <canvas id="costVarianceCanvas" width="600" height="220"></canvas>
+      <canvas id="costVarianceCanvas"></canvas>
     </div>
     <div class="chart-card">
       <h2>Unoptimized Baseline vs. TokWiz Workflow Tokens</h2>
-      <canvas id="tokensTimelineCanvas" width="600" height="220"></canvas>
+      <canvas id="tokensTimelineCanvas"></canvas>
     </div>
     <div class="chart-card">
       <h2>Token Breakdown by Phase (Context, Graph, Tool Output, Reasoning, Output)</h2>
-      <canvas id="phaseBreakdownCanvas" width="600" height="220"></canvas>
+      <canvas id="phaseBreakdownCanvas"></canvas>
     </div>
     <div class="chart-card">
       <h2>Model Cost Comparison (Real Billed vs. Net Saved $)</h2>
-      <canvas id="modelCostCanvas" width="600" height="220"></canvas>
+      <canvas id="modelCostCanvas"></canvas>
     </div>
   </section>
 
@@ -478,6 +476,21 @@
       ]
     };
 
+    /* ==================== RETINA / HIDPI CANVAS HELPER ==================== */
+    function setupHiDPICanvas(canvas) {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      const cssW = Math.max(200, Math.round(rect.width || 600));
+      const cssH = Math.max(150, Math.round(rect.height || 220));
+      if (canvas.width !== cssW * dpr || canvas.height !== cssH * dpr) {
+        canvas.width = cssW * dpr;
+        canvas.height = cssH * dpr;
+      }
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return { ctx, width: cssW, height: cssH };
+    }
+
     /* ==================== 3D ROTATABLE GRAPH ENGINE ==================== */
     const graph3D = {
       nodes: [],
@@ -487,64 +500,84 @@
       hoveredNode: null,
       searchTerm: "",
       edgeFilter: "ALL",
-      yaw: 0.55,
-      pitch: 0.32,
+      yaw: 0.45,
+      pitch: 0.25,
       zoom: 1.0,
-      autoRotate: true,
+      autoRotate: false, // Static by default so nodes are crisp and easy to inspect
       isDragging: false,
       dragMoved: false,
       lastMouseX: 0,
       lastMouseY: 0,
-      pulseTick: 0
+      animLoopActive: false
     };
 
     function init3DGraph(graphData) {
       document.getElementById("kpiGraphNodes").textContent = `${graphData.total_nodes || 0} nodes`;
       document.getElementById("kpiGraphSub").textContent = `${graphData.total_files || 0} files · ${graphData.total_edges || 0} edges (Live SQLite index)`;
 
-      const rawNodes = (graphData.nodes || []).slice(0, 85);
+      const rawNodes = (graphData.nodes || []).slice(0, 75);
       const nodeIds = new Set(rawNodes.map(n => n.id));
       const edges = (graphData.edges || []).filter(
         e => nodeIds.has(e.source) && nodeIds.has(e.target)
       );
 
-      // Assign initial 3D coordinates using Fibonacci sphere grouped by file path
+      // Place every node on a well-spaced 3D Fibonacci sphere first, grouped by file cluster
       const filesList = [...new Set(rawNodes.map(n => n.file_path))];
       const fileCenters = new Map();
       filesList.forEach((fp, idx) => {
         const phi = Math.acos(1 - 2 * (idx + 0.5) / Math.max(1, filesList.length));
         const theta = Math.PI * (1 + Math.sqrt(5)) * idx;
-        const rad = 165;
+        const clusterRadius = 155;
         fileCenters.set(fp, {
-          x: rad * Math.sin(phi) * Math.cos(theta),
-          y: rad * Math.cos(phi) * 0.75,
-          z: rad * Math.sin(phi) * Math.sin(theta)
+          x: clusterRadius * Math.sin(phi) * Math.cos(theta),
+          y: clusterRadius * Math.cos(phi) * 0.85,
+          z: clusterRadius * Math.sin(phi) * Math.sin(theta)
         });
       });
 
-      graph3D.nodes = rawNodes.map((n, idx) => {
+      // Group symbols per file so each symbol in a file gets a distinct 3D satellite angle
+      const fileIndexCount = new Map();
+      graph3D.nodes = rawNodes.map((n) => {
         const fc = fileCenters.get(n.file_path) || { x: 0, y: 0, z: 0 };
-        const localAngle = (idx * 2.39996);
-        const localSpread = n.kind === "file" ? 0 : (n.kind === "class" ? 42 : 74);
-        const zJitter = ((idx * 37) % 60 - 30) * (n.kind === "file" ? 0.1 : 1.0);
+        const idxInFile = fileIndexCount.get(n.file_path) || 0;
+        fileIndexCount.set(n.file_path, idxInFile + 1);
+
+        if (n.kind === "file") {
+          return {
+            ...n,
+            x: fc.x,
+            y: fc.y,
+            z: fc.z,
+            vx: 0,
+            vy: 0,
+            vz: 0,
+            baseRadius: 11.5
+          };
+        }
+
+        // Distribute symbols on a 3D sub-sphere around their file hub
+        const subPhi = Math.acos(1 - 2 * ((idxInFile % 16) + 0.5) / 16);
+        const subTheta = Math.PI * (1 + Math.sqrt(5)) * idxInFile;
+        const subRadius = n.kind === "class" ? 55 : 92;
+
         return {
           ...n,
-          x: fc.x + Math.cos(localAngle) * localSpread,
-          y: fc.y + Math.sin(localAngle) * localSpread,
-          z: fc.z + zJitter,
+          x: fc.x + subRadius * Math.sin(subPhi) * Math.cos(subTheta),
+          y: fc.y + subRadius * Math.cos(subPhi),
+          z: fc.z + subRadius * Math.sin(subPhi) * Math.sin(subTheta),
           vx: 0,
           vy: 0,
           vz: 0,
-          baseRadius: n.kind === "file" ? 11 : Math.max(6, Math.min(13, 5.5 + Math.sqrt(n.pagerank || 1) * 2.3))
+          baseRadius: n.kind === "class" ? 9.5 : Math.max(6.5, Math.min(11, 5.5 + Math.sqrt(n.pagerank || 1) * 1.8))
         };
       });
 
       graph3D.edges = edges;
 
-      // Run 90 iterations of 3D Force-Directed Physics
+      // Run 60 iterations of 3D Force-Directed Physics (with fixed dz * dz math!)
       const nodeMap = new Map(graph3D.nodes.map(n => [n.id, n]));
-      for (let step = 0; step < 90; step++) {
-        // 3D Coulomb repulsion
+      for (let step = 0; step < 60; step++) {
+        // 3D Coulomb repulsion so no two spheres ever stack on top of each other
         for (let i = 0; i < graph3D.nodes.length; i++) {
           for (let j = i + 1; j < graph3D.nodes.length; j++) {
             const a = graph3D.nodes[i];
@@ -552,11 +585,15 @@
             const dx = b.x - a.x;
             const dy = b.y - a.y;
             const dz = b.z - a.z;
-            const d2 = dx * dx + dy * dy + dz * dz + 4;
-            if (d2 < 32000) {
-              const f = 950 / d2;
-              a.vx -= dx * f; a.vy -= dy * f; a.vz -= dz * f;
-              b.vx += dx * f; b.vy += dy * f; b.vz += dz * f;
+            const d2 = dx * dx + dy * dy + dz * dz + 9;
+            if (d2 < 25000) {
+              const d = Math.sqrt(d2);
+              const f = 1400 / d2;
+              const fx = (dx / d) * f;
+              const fy = (dy / d) * f;
+              const fz = (dz / d) * f;
+              a.vx -= fx; a.vy -= fy; a.vz -= fz;
+              b.vx += fx; b.vy += fy; b.vz += fz;
             }
           }
         }
@@ -568,22 +605,37 @@
           const dx = t.x - s.x;
           const dy = t.y - s.y;
           const dz = t.z - s.z;
-          const dist = Math.sqrt(dx * dx + dy * dz + dy * dy) || 1;
-          const rest = e.type === "DEFINES" ? 58 : 115;
-          const f = (dist - rest) * 0.025;
+          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+          const rest = e.type === "DEFINES" ? 72 : 135;
+          const f = (dist - rest) * 0.022;
           const fx = (dx / dist) * f;
           const fy = (dy / dist) * f;
           const fz = (dz / dist) * f;
           s.vx += fx; s.vy += fy; s.vz += fz;
           t.vx -= fx; t.vy -= fy; t.vz -= fz;
         }
-        // Centering gravity + damping
+        // Mild centering gravity + velocity damping
         for (const n of graph3D.nodes) {
-          n.vx = (n.vx - n.x * 0.012) * 0.76;
-          n.vy = (n.vy - n.y * 0.012) * 0.76;
-          n.vz = (n.vz - n.z * 0.012) * 0.76;
-          n.x += n.vx; n.y += n.vy; n.z += n.vz;
+          n.vx = (n.vx - n.x * 0.008) * 0.72;
+          n.vy = (n.vy - n.y * 0.008) * 0.72;
+          n.vz = (n.vz - n.z * 0.008) * 0.72;
+          n.x += n.vx;
+          n.y += n.vy;
+          n.z += n.vz;
         }
+      }
+
+      // Normalize 3D bounding sphere to radius ~210 so it always fills the 3D viewport cleanly
+      let maxR = 1;
+      for (const n of graph3D.nodes) {
+        const r = Math.hypot(n.x, n.y, n.z);
+        if (r > maxR) maxR = r;
+      }
+      const normScale = 215 / maxR;
+      for (const n of graph3D.nodes) {
+        n.x *= normScale;
+        n.y *= normScale;
+        n.z *= normScale;
       }
 
       if (graph3D.nodes.length > 0 && !graph3D.selectedNode) {
@@ -591,6 +643,8 @@
           ? graph3D.nodes.find(n => n.id === graphData.top_hubs[0].id)
           : graph3D.nodes[0];
         select3DNode(topHub || graph3D.nodes[0]);
+      } else {
+        draw3DScene();
       }
 
       drawHubsChart(graphData.top_hubs || []);
@@ -608,9 +662,9 @@
       const y2 = y * cosP - z1 * sinP;
       const z2 = z1 * cosP + y * sinP;
 
-      const fov = 560 * graph3D.zoom;
-      const cameraDist = 520;
-      const depth = Math.max(80, cameraDist + z2);
+      const fov = 620 * graph3D.zoom;
+      const cameraDist = 560;
+      const depth = Math.max(100, cameraDist + z2);
       const scale = fov / depth;
 
       return {
@@ -621,32 +675,35 @@
       };
     }
 
-    function render3DFrame() {
+    function draw3DScene() {
       const canvas = document.getElementById("projectGraphCanvas");
-      const ctx = canvas.getContext("2d");
-      const W = canvas.width;
-      const H = canvas.height;
+      const { ctx, width: W, height: H } = setupHiDPICanvas(canvas);
       const cx = W / 2;
       const cy = H / 2;
 
       ctx.clearRect(0, 0, W, H);
 
-      if (graph3D.autoRotate && !graph3D.isDragging) {
-        graph3D.yaw += 0.0045;
-      }
-      graph3D.pulseTick = (graph3D.pulseTick + 0.012) % 1;
-
-      // Draw 3D equatorial reference ring so 3D tilt & rotation are immediately visible
+      // Draw subtle 3D equatorial and meridian reference rings
       ctx.save();
+      const ringRadius = 225;
       ctx.beginPath();
-      const ringRadius = 215;
-      for (let i = 0; i <= 64; i++) {
-        const ang = (i / 64) * Math.PI * 2;
+      for (let i = 0; i <= 72; i++) {
+        const ang = (i / 72) * Math.PI * 2;
         const p = project3DPoint(Math.cos(ang) * ringRadius, 0, Math.sin(ang) * ringRadius, cx, cy);
         if (i === 0) ctx.moveTo(p.sx, p.sy); else ctx.lineTo(p.sx, p.sy);
       }
-      ctx.strokeStyle = "rgba(56, 189, 248, 0.10)";
-      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = "rgba(56, 189, 248, 0.12)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.beginPath();
+      for (let i = 0; i <= 72; i++) {
+        const ang = (i / 72) * Math.PI * 2;
+        const p = project3DPoint(0, Math.sin(ang) * ringRadius, Math.cos(ang) * ringRadius, cx, cy);
+        if (i === 0) ctx.moveTo(p.sx, p.sy); else ctx.lineTo(p.sx, p.sy);
+      }
+      ctx.strokeStyle = "rgba(167, 139, 250, 0.08)";
+      ctx.lineWidth = 1;
       ctx.stroke();
       ctx.restore();
 
@@ -654,7 +711,11 @@
       graph3D.projected.clear();
       for (const n of graph3D.nodes) {
         const proj = project3DPoint(n.x, n.y, n.z, cx, cy);
-        graph3D.projected.set(n.id, { ...proj, node: n, r: Math.max(3.5, n.baseRadius * proj.scale) });
+        graph3D.projected.set(n.id, {
+          ...proj,
+          node: n,
+          r: Math.max(4.5, n.baseRadius * proj.scale)
+        });
       }
 
       const sel = graph3D.selectedNode;
@@ -679,38 +740,40 @@
         if (!ps || !pt) continue;
 
         const avgZ = (ps.z + pt.z) / 2;
-        const depthAlpha = Math.max(0.12, Math.min(0.85, 1 - (avgZ + 220) / 520));
+        const depthAlpha = Math.max(0.15, Math.min(0.85, 1 - (avgZ + 230) / 560));
         const isActive = sel && (e.source === sel.id || e.target === sel.id);
 
         ctx.beginPath();
         ctx.moveTo(ps.sx, ps.sy);
         ctx.lineTo(pt.sx, pt.sy);
         if (isActive) {
-          ctx.strokeStyle = e.type === "CALLS" ? "rgba(52, 211, 153, 0.9)" : "rgba(56, 189, 248, 0.85)";
+          ctx.strokeStyle = e.type === "CALLS" ? "#34d399" : "#38bdf8";
           ctx.lineWidth = 2.2;
         } else {
           ctx.strokeStyle = e.type === "CALLS"
             ? `rgba(52, 211, 153, ${depthAlpha * 0.45})`
             : `rgba(139, 157, 195, ${depthAlpha * 0.28})`;
-          ctx.lineWidth = 1.0;
+          ctx.lineWidth = 1.1;
         }
         ctx.stroke();
 
-        // Draw animated directional call pulse on CALLS edges
-        if (e.type === "CALLS" && (isActive || graph3D.edgeFilter === "CALLS")) {
-          const t = graph3D.pulseTick;
-          const px = ps.sx + (pt.sx - ps.sx) * t;
-          const py = ps.sy + (pt.sy - ps.sy) * t;
+        // Draw directional arrowhead on active CALLS edges
+        if (isActive && e.type === "CALLS") {
+          const mx = ps.sx + (pt.sx - ps.sx) * 0.65;
+          const my = ps.sy + (pt.sy - ps.sy) * 0.65;
           ctx.fillStyle = "#34d399";
           ctx.beginPath();
-          ctx.arc(px, py, isActive ? 3.2 : 2.2, 0, Math.PI * 2);
+          ctx.arc(mx, my, 3.2, 0, Math.PI * 2);
           ctx.fill();
         }
       }
 
-      // Depth-sort nodes back-to-front (largest z is furthest away)
+      // Depth-sort nodes back-to-front (largest z is furthest from camera)
       const sortedProj = [...graph3D.projected.values()].sort((a, b) => b.z - a.z);
       const searchLow = graph3D.searchTerm.toLowerCase();
+
+      // Track label bounding boxes so labels NEVER overlap into a blurry pile
+      const placedLabelBoxes = [];
 
       for (const item of sortedProj) {
         const n = item.node;
@@ -722,27 +785,15 @@
           n.file_path.toLowerCase().includes(searchLow)
         );
 
-        const depthFactor = Math.max(0.28, Math.min(1.0, 1 - (item.z + 240) / 560));
+        const depthFactor = Math.max(0.35, Math.min(1.0, 1 - (item.z + 240) / 580));
         const dimmed = (sel && !isNeighbor && !matchesSearch) || (searchLow && !matchesSearch);
-        const alpha = dimmed ? depthFactor * 0.35 : depthFactor;
-
+        const alpha = dimmed ? depthFactor * 0.38 : depthFactor;
         const baseColor = KIND_COLORS[n.kind] || "#38bdf8";
 
         ctx.save();
         ctx.globalAlpha = alpha;
 
-        // 3D Outer Glow Halo for selected/hovered/hub nodes
-        if (isSelected || isHovered || matchesSearch || n.kind === "file") {
-          const halo = ctx.createRadialGradient(item.sx, item.sy, item.r * 0.4, item.sx, item.sy, item.r * 2.4);
-          halo.addColorStop(0, baseColor);
-          halo.addColorStop(1, "rgba(0,0,0,0)");
-          ctx.fillStyle = halo;
-          ctx.beginPath();
-          ctx.arc(item.sx, item.sy, item.r * 2.4, 0, Math.PI * 2);
-          ctx.fill();
-        }
-
-        // 3D Shaded Sphere with Specular Highlight
+        // 3D Shaded Sphere with crisp Specular Highlight
         const grad = ctx.createRadialGradient(
           item.sx - item.r * 0.35,
           item.sy - item.r * 0.35,
@@ -752,8 +803,8 @@
           item.r
         );
         grad.addColorStop(0, "#ffffff");
-        grad.addColorStop(0.32, baseColor);
-        grad.addColorStop(1, "#060b16");
+        grad.addColorStop(0.3, baseColor);
+        grad.addColorStop(1, "#081021");
 
         ctx.fillStyle = grad;
         ctx.beginPath();
@@ -762,31 +813,72 @@
 
         if (isSelected || isHovered || matchesSearch) {
           ctx.strokeStyle = "#ffffff";
-          ctx.lineWidth = 2.0;
+          ctx.lineWidth = 2.2;
           ctx.stroke();
-        }
-
-        // Smart Level-of-Detail (LOD) labels: show labels for selected, neighbors, search matches, files, or high-PageRank nodes
-        const showLabel = isSelected || isHovered || isNeighbor || matchesSearch || n.kind === "file" || n.pagerank >= 1.3;
-        if (showLabel) {
-          const fontSize = Math.max(9.5, Math.min(13, 10.5 * item.scale));
-          ctx.font = (isSelected || isHovered) ? `700 ${fontSize}px sans-serif` : `500 ${fontSize}px sans-serif`;
-          const textW = ctx.measureText(n.name).width;
-          const lx = item.sx + item.r + 5;
-          const ly = item.sy + 3;
-
-          ctx.fillStyle = "rgba(7, 11, 18, 0.76)";
-          ctx.fillRect(lx - 3, ly - fontSize, textW + 6, fontSize + 4);
-          ctx.fillStyle = isSelected ? "#38bdf8" : "#eef2ff";
-          ctx.fillText(n.name, lx, ly);
         }
 
         ctx.restore();
       }
 
-      // Draw 3D Orientation Gizmo in bottom-right corner
+      // Second pass front-to-back for crisp, collision-free labels
+      const frontToBack = [...sortedProj].reverse();
+      for (const item of frontToBack) {
+        const n = item.node;
+        const isSelected = sel && sel.id === n.id;
+        const isHovered = graph3D.hoveredNode && graph3D.hoveredNode.id === n.id;
+        const isNeighbor = neighborIds.has(n.id);
+        const matchesSearch = searchLow && (
+          n.name.toLowerCase().includes(searchLow) ||
+          n.file_path.toLowerCase().includes(searchLow)
+        );
+
+        const priorityLabel = isSelected || isHovered || matchesSearch || isNeighbor || n.kind === "file";
+        if (!priorityLabel && n.pagerank < 1.35) continue;
+
+        ctx.font = (isSelected || isHovered) ? "700 12px -apple-system, sans-serif" : "600 11px -apple-system, sans-serif";
+        const textW = Math.ceil(ctx.measureText(n.name).width);
+        const boxH = 18;
+        const lx = Math.round(item.sx + item.r + 6);
+        const ly = Math.round(item.sy - 9);
+        const box = { x1: lx - 4, y1: ly, x2: lx + textW + 6, y2: ly + boxH };
+
+        // Skip non-selected labels that would collide with a closer label
+        if (!isSelected && !isHovered) {
+          const collides = placedLabelBoxes.some(
+            b => !(box.x2 < b.x1 || box.x1 > b.x2 || box.y2 < b.y1 || box.y1 > b.y2)
+          );
+          if (collides) continue;
+        }
+        placedLabelBoxes.push(box);
+
+        ctx.save();
+        ctx.fillStyle = isSelected ? "rgba(14, 29, 58, 0.95)" : "rgba(9, 14, 26, 0.88)";
+        ctx.strokeStyle = isSelected ? "#38bdf8" : "rgba(30, 44, 71, 0.9)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(box.x1, box.y1, box.x2 - box.x1, boxH, 4);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = isSelected ? "#38bdf8" : "#eef2ff";
+        ctx.fillText(n.name, lx + 1, ly + 13);
+        ctx.restore();
+      }
+
       draw3DGizmo(ctx, W - 48, H - 48);
-      requestAnimationFrame(render3DFrame);
+    }
+
+    function runAutoOrbitLoop() {
+      if (!graph3D.autoRotate) {
+        graph3D.animLoopActive = false;
+        return;
+      }
+      graph3D.animLoopActive = true;
+      if (!graph3D.isDragging) {
+        graph3D.yaw += 0.005;
+        draw3DScene();
+      }
+      requestAnimationFrame(runAutoOrbitLoop);
     }
 
     function draw3DGizmo(ctx, gx, gy) {
@@ -810,7 +902,7 @@
         ctx.stroke();
         ctx.fillStyle = a.color;
         ctx.font = "bold 10px sans-serif";
-        ctx.fillText(a.label, gx + x1 * 1.25 - 3, gy + y2 * 1.25 + 3);
+        ctx.fillText(a.label, gx + x1 * 1.28 - 3, gy + y2 * 1.28 + 3);
       }
       ctx.restore();
     }
@@ -859,6 +951,8 @@
           if (target) select3DNode(target);
         });
       });
+
+      draw3DScene();
     }
 
     function setup3DInteractions() {
@@ -867,16 +961,15 @@
       const getCanvasPos = (evt) => {
         const rect = canvas.getBoundingClientRect();
         return {
-          x: (evt.clientX - rect.left) * (canvas.width / rect.width),
-          y: (evt.clientY - rect.top) * (canvas.height / rect.height)
+          x: evt.clientX - rect.left,
+          y: evt.clientY - rect.top
         };
       };
 
       const findHitNode = (x, y) => {
-        // Check front-to-back (smallest z first)
         const frontFirst = [...graph3D.projected.values()].sort((a, b) => a.z - b.z);
         for (const item of frontFirst) {
-          if (Math.hypot(item.sx - x, item.sy - y) <= item.r + 5) {
+          if (Math.hypot(item.sx - x, item.sy - y) <= item.r + 6) {
             return item.node;
           }
         }
@@ -893,8 +986,12 @@
       window.addEventListener("mousemove", (evt) => {
         const pos = getCanvasPos(evt);
         if (!graph3D.isDragging) {
+          const prevHover = graph3D.hoveredNode;
           graph3D.hoveredNode = findHitNode(pos.x, pos.y);
           canvas.style.cursor = graph3D.hoveredNode ? "pointer" : "grab";
+          if (prevHover !== graph3D.hoveredNode) {
+            draw3DScene();
+          }
           return;
         }
         const dx = evt.clientX - graph3D.lastMouseX;
@@ -906,6 +1003,7 @@
         graph3D.pitch = Math.max(-1.35, Math.min(1.35, graph3D.pitch + dy * 0.0075));
         graph3D.lastMouseX = evt.clientX;
         graph3D.lastMouseY = evt.clientY;
+        draw3DScene();
       });
 
       window.addEventListener("mouseup", (evt) => {
@@ -919,15 +1017,18 @@
 
       canvas.addEventListener("wheel", (evt) => {
         evt.preventDefault();
-        const factor = evt.deltaY < 0 ? 1.1 : 0.9;
+        const factor = evt.deltaY < 0 ? 1.12 : 0.89;
         graph3D.zoom = Math.max(0.45, Math.min(2.8, graph3D.zoom * factor));
+        draw3DScene();
       }, { passive: false });
 
       document.getElementById("zoomInBtn").addEventListener("click", () => {
         graph3D.zoom = Math.min(2.8, graph3D.zoom * 1.2);
+        draw3DScene();
       });
       document.getElementById("zoomOutBtn").addEventListener("click", () => {
         graph3D.zoom = Math.max(0.45, graph3D.zoom * 0.85);
+        draw3DScene();
       });
 
       const autoBtn = document.getElementById("autoRotateBtn");
@@ -935,12 +1036,16 @@
         graph3D.autoRotate = !graph3D.autoRotate;
         autoBtn.textContent = `Auto-Orbit: ${graph3D.autoRotate ? "ON" : "OFF"}`;
         autoBtn.classList.toggle("active", graph3D.autoRotate);
+        if (graph3D.autoRotate && !graph3D.animLoopActive) {
+          runAutoOrbitLoop();
+        }
       });
 
       document.getElementById("resetCameraBtn").addEventListener("click", () => {
-        graph3D.yaw = 0.55;
-        graph3D.pitch = 0.32;
+        graph3D.yaw = 0.45;
+        graph3D.pitch = 0.25;
         graph3D.zoom = 1.0;
+        draw3DScene();
       });
 
       document.getElementById("graphSearchInput").addEventListener("input", (evt) => {
@@ -951,32 +1056,40 @@
           );
           if (match) select3DNode(match);
         }
+        draw3DScene();
       });
 
       document.getElementById("edgeFilterSelect").addEventListener("change", (evt) => {
         graph3D.edgeFilter = evt.target.value;
+        draw3DScene();
+      });
+
+      window.addEventListener("resize", () => {
+        draw3DScene();
       });
     }
 
     function drawHubsChart(hubs) {
       const canvas = document.getElementById("hubsChartCanvas");
-      const ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const { ctx, width: W, height: H } = setupHiDPICanvas(canvas);
+      ctx.clearRect(0, 0, W, H);
       const top = hubs.slice(0, 7);
       if (!top.length) return;
 
       const maxPr = Math.max(0.1, ...top.map(h => h.pagerank));
-      const rowH = canvas.height / top.length;
+      const rowH = H / top.length;
 
       top.forEach((h, i) => {
         const y = i * rowH;
-        const bw = (h.pagerank / maxPr) * 145;
+        const bw = (h.pagerank / maxPr) * (W - 165);
         ctx.fillStyle = "#eef2ff";
-        ctx.font = "11px sans-serif";
+        ctx.font = "11.5px -apple-system, sans-serif";
         ctx.fillText(h.name.slice(0, 18), 4, y + rowH * 0.65);
 
         ctx.fillStyle = KIND_COLORS[h.kind] || "#38bdf8";
-        ctx.fillRect(122, y + 6, Math.max(6, bw), rowH - 11);
+        ctx.beginPath();
+        ctx.roundRect(122, y + 6, Math.max(6, bw), rowH - 12, 4);
+        ctx.fill();
 
         ctx.fillStyle = "#8b9dc3";
         ctx.fillText(h.pagerank.toFixed(1), 128 + bw, y + rowH * 0.65);
@@ -1026,14 +1139,14 @@
     }
 
     function drawEmptyCanvasNotice(canvas, message) {
-      const ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const { ctx, width: W, height: H } = setupHiDPICanvas(canvas);
+      ctx.clearRect(0, 0, W, H);
       ctx.strokeStyle = "#1e2c47";
-      ctx.strokeRect(16, 16, canvas.width - 32, canvas.height - 32);
+      ctx.strokeRect(12, 12, W - 24, H - 24);
       ctx.fillStyle = "#8b9dc3";
-      ctx.font = "12.5px sans-serif";
+      ctx.font = "12.5px -apple-system, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(message, canvas.width / 2, canvas.height / 2);
+      ctx.fillText(message, W / 2, H / 2);
       ctx.textAlign = "left";
     }
 
@@ -1043,12 +1156,12 @@
         drawEmptyCanvasNotice(canvas, "No reconciled turns yet — run a prompt in this workspace to chart Forecast vs. Real $.");
         return;
       }
-      const ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const { ctx, width: W, height: H } = setupHiDPICanvas(canvas);
+      ctx.clearRect(0, 0, W, H);
 
       const pad = { l: 52, r: 20, t: 22, b: 30 };
-      const w = canvas.width - pad.l - pad.r;
-      const h = canvas.height - pad.t - pad.b;
+      const w = W - pad.l - pad.r;
+      const h = H - pad.t - pad.b;
       const maxCost = Math.max(0.001, ...turns.map(t => Math.max(t.forecast_cost_usd, t.real_cost_usd) * 1.15));
 
       ctx.strokeStyle = "#1e2c47";
@@ -1093,7 +1206,7 @@
       ctx.stroke();
 
       ctx.fillStyle = "#8b9dc3";
-      ctx.font = "11px sans-serif";
+      ctx.font = "11px -apple-system, sans-serif";
       ctx.fillText("Blue: Forecasted $   Green: Real Billed $   Bars: Residual Error (ΔC)", pad.l + 8, pad.t + 12);
     }
 
@@ -1103,12 +1216,12 @@
         drawEmptyCanvasNotice(canvas, "No turns recorded yet — token savings bars appear after your first turn completes.");
         return;
       }
-      const ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const { ctx, width: W, height: H } = setupHiDPICanvas(canvas);
+      ctx.clearRect(0, 0, W, H);
 
       const pad = { l: 52, r: 20, t: 22, b: 30 };
-      const w = canvas.width - pad.l - pad.r;
-      const h = canvas.height - pad.t - pad.b;
+      const w = W - pad.l - pad.r;
+      const h = H - pad.t - pad.b;
       const maxTok = Math.max(100, ...turns.map(t => t.unoptimized_baseline_tokens * 1.1));
       const barGroupW = w / turns.length;
 
@@ -1126,7 +1239,7 @@
       });
 
       ctx.fillStyle = "#8b9dc3";
-      ctx.font = "11px sans-serif";
+      ctx.font = "11px -apple-system, sans-serif";
       ctx.fillText("Red: Unoptimized Baseline Tokens   Green: Real TokWiz Workflow Tokens", pad.l + 8, pad.t + 12);
     }
 
@@ -1137,8 +1250,8 @@
         drawEmptyCanvasNotice(canvas, "Waiting for live turn telemetry to break down Context, Graph, Tool, and Output tokens.");
         return;
       }
-      const ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const { ctx, width: W, height: H } = setupHiDPICanvas(canvas);
+      ctx.clearRect(0, 0, W, H);
 
       const entries = [
         ["Context Input", phases.context_input || 0, "#38bdf8"],
@@ -1149,14 +1262,14 @@
       ];
       const maxVal = Math.max(1, ...entries.map(e => e[1]));
       const pad = { l: 110, r: 65, t: 18, b: 18 };
-      const w = canvas.width - pad.l - pad.r;
-      const rowH = (canvas.height - pad.t - pad.b) / entries.length;
+      const w = W - pad.l - pad.r;
+      const rowH = (H - pad.t - pad.b) / entries.length;
 
       entries.forEach(([label, val, color], idx) => {
         const y = pad.t + idx * rowH;
         const bw = (val / maxVal) * w;
         ctx.fillStyle = "#eef2ff";
-        ctx.font = "12px sans-serif";
+        ctx.font = "12px -apple-system, sans-serif";
         ctx.fillText(label, 12, y + rowH * 0.62);
 
         ctx.fillStyle = color;
@@ -1174,19 +1287,19 @@
         drawEmptyCanvasNotice(canvas, "No model billing records yet in this workspace.");
         return;
       }
-      const ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const { ctx, width: W, height: H } = setupHiDPICanvas(canvas);
+      ctx.clearRect(0, 0, W, H);
 
       const pad = { l: 130, r: 50, t: 24, b: 20 };
-      const w = canvas.width - pad.l - pad.r;
-      const rowH = (canvas.height - pad.t - pad.b) / keys.length;
+      const w = W - pad.l - pad.r;
+      const rowH = (H - pad.t - pad.b) / keys.length;
       const maxUsd = Math.max(0.0001, ...keys.map(k => Math.max(models[k].real_cost_usd, models[k].saved_cost_usd)));
 
       keys.forEach((k, idx) => {
         const m = models[k];
         const y = pad.t + idx * rowH;
         ctx.fillStyle = "#eef2ff";
-        ctx.font = "12px sans-serif";
+        ctx.font = "12px -apple-system, sans-serif";
         ctx.fillText(k, 12, y + rowH * 0.55);
 
         const wReal = (m.real_cost_usd / maxUsd) * w;
@@ -1200,7 +1313,7 @@
       });
 
       ctx.fillStyle = "#8b9dc3";
-      ctx.font = "11px sans-serif";
+      ctx.font = "11px -apple-system, sans-serif";
       ctx.fillText("Blue: Real Billed $   Green: Net Saved $", pad.l, 14);
     }
 
@@ -1215,7 +1328,6 @@
         return;
       }
 
-      // Show reconciled turns
       turns.slice().reverse().forEach(t => {
         const tr = document.createElement("tr");
         const tags = (t.variance_tags || ["ON_TARGET"]).map(tag => `<span class="tag ${tag}">${tag}</span>`).join("");
@@ -1236,7 +1348,6 @@
         tbody.appendChild(tr);
       });
 
-      // Also show pending forecasts if no turns reconciled yet
       if (turns.length === 0 && forecasts.length > 0) {
         forecasts.slice().reverse().forEach(f => {
           const tr = document.createElement("tr");
@@ -1270,7 +1381,6 @@
         const statsData = await statsRes.json();
         const graphData = await graphRes.json();
 
-        // Always render real workspace telemetry (never auto-populate fake sample data!)
         renderDashboard(statsData, false);
         if (graphData && graphData.nodes) {
           init3DGraph(graphData);
@@ -1281,7 +1391,6 @@
     }
 
     setup3DInteractions();
-    requestAnimationFrame(render3DFrame);
 
     document.getElementById("liveBtn").addEventListener("click", loadLiveStats);
     document.getElementById("demoBtn").addEventListener("click", () => {
