@@ -159,6 +159,16 @@ def _populate_sample_repo(target: Path) -> None:
     )
 
 
+    # Initialize an isolated git repository so AI agents do not walk up to parent tokwiz repo
+    subprocess.run(["git", "init", "-q"], cwd=str(target), check=True)
+    subprocess.run(["git", "add", "."], cwd=str(target), check=True)
+    subprocess.run(
+        ["git", "-c", "user.name=Demo", "-c", "user.email=demo@example.com", "commit", "-q", "-m", "chore: initial sample app"],
+        cwd=str(target),
+        check=True,
+    )
+
+
 def main() -> int:
     baseline_dir = WORKSPACE_DIR / "project-baseline"
     tokwiz_dir = WORKSPACE_DIR / "project-tokwiz"
