@@ -630,6 +630,107 @@ class ProjectGraph:
         final_str = f"[TokWiz Graph Slice: {query_text} ({tok_count} tokens)]\n{body_str}"
         return final_str, estimate_tokens(final_str)
 
+    def export_graph_data(self, max_nodes: int = 120, auto_build: bool = True) -> Dict[str, object]:
+        """Export nodes, edges, PageRank scores, and structural stats for the web visualizer."""
+        if auto_build:
+            self.build(force=False)
+
+        with self._connect() as conn:
+            file_rows = conn.execute(
+                "SELECT file_path, language, line_count, size_bytes FROM files ORDER BY file_path"
+            ).fetchall()
+            node_rows = conn.execute(
+                "SELECT node_id, file_path, name, qualified_name, kind, start_line, end_line, signature FROM nodes"
+            ).fetchall()
+            edge_rows = conn.execute(
+                "SELECT source_id, target_id, target_name, edge_type, file_path, line_no FROM edges"
+            ).fetchall()
+
+        nodes_by_id: Dict[str, Dict[str, object]] = {r["node_id"]: dict(r) for r in node_rows}
+        adjacency: Dict[str, List[str]] = {}
+        in_degree: Dict[str, int] = {}
+        out_degree: Dict[str, int] = {}
+
+        resolved_edges: List[Dict[str, object]] = []
+        for e in edge_rows:
+            src, dst = str(e["source_id"]), str(e["target_id"])
+            if src in nodes_by_id and dst in nodes_by_id and src != dst:
+                adjacency.setdefault(src, []).append(dst)
+                adjacency.setdefault(dst, []).append(src)
+                out_degree[src] = out_degree.get(src, 0) + 1
+                in_degree[dst] = in_degree.get(dst, 0) + 1
+                resolved_edges.append(
+                    {
+                        "source": src,
+                        "target": dst,
+                        "type": str(e["edge_type"]),
+                        "line": int(e["line_no"]),
+                    }
+                )
+
+        # Compute global PageRank across all nodes
+        uniform_seeds = {nid: 1.0 for nid in nodes_by_id}
+        pr_scores = self._personalized_pagerank(uniform_seeds, adjacency) if uniform_seeds else {}
+
+        kind_counts: Dict[str, int] = {}
+        for nd in nodes_by_id.values():
+            k = str(nd["kind"])
+            kind_counts[k] = kind_counts.get(k, 0) + 1
+
+        lang_counts: Dict[str, int] = {}
+        for fr in file_rows:
+            lg = str(fr["language"])
+            lang_counts[lg] = lang_counts.get(lg, 0) + 1
+
+        # Select top nodes by PageRank + degree so graph visualization stays crisp
+        ranked_ids = sorted(
+            nodes_by_id.keys(),
+            key=lambda nid: (
+                pr_scores.get(nid, 0.0),
+                in_degree.get(nid, 0) + out_degree.get(nid, 0),
+            ),
+            reverse=True,
+        )[:max_nodes]
+        kept_set = set(ranked_ids)
+
+        export_nodes: List[Dict[str, object]] = []
+        for nid in ranked_ids:
+            nd = nodes_by_id[nid]
+            export_nodes.append(
+                {
+                    "id": nid,
+                    "name": nd["name"],
+                    "qualified_name": nd["qualified_name"],
+                    "kind": nd["kind"],
+                    "file_path": nd["file_path"],
+                    "start_line": nd["start_line"],
+                    "end_line": nd["end_line"],
+                    "signature": nd["signature"],
+                    "pagerank": round(pr_scores.get(nid, 0.0) * 100.0, 3),
+                    "in_degree": in_degree.get(nid, 0),
+                    "out_degree": out_degree.get(nid, 0),
+                }
+            )
+
+        export_edges = [
+            e for e in resolved_edges if e["source"] in kept_set and e["target"] in kept_set
+        ]
+
+        top_hubs = [
+            n for n in export_nodes if n["kind"] != "file"
+        ][:10]
+
+        return {
+            "total_files": len(file_rows),
+            "total_nodes": len(nodes_by_id),
+            "total_edges": len(resolved_edges),
+            "kind_counts": kind_counts,
+            "language_counts": lang_counts,
+            "top_hubs": top_hubs,
+            "nodes": export_nodes,
+            "edges": export_edges,
+        }
+
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(

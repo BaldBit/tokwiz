@@ -1,4 +1,5 @@
 .tokwiz/
+demo/workspace/
 .venv/
 __pycache__/
 *.py[cod]

@@ -26,7 +26,14 @@ _tel_mod = importlib.util.module_from_spec(_TEL_SPEC)
 sys.modules["telemetry"] = _tel_mod
 _TEL_SPEC.loader.exec_module(_tel_mod)
 
+_GRAPH_SPEC = importlib.util.spec_from_file_location("project_graph", _SCRIPTS_DIR / "project-graph.py")
+assert _GRAPH_SPEC and _GRAPH_SPEC.loader
+_graph_mod = importlib.util.module_from_spec(_GRAPH_SPEC)
+sys.modules["project_graph"] = _graph_mod
+_GRAPH_SPEC.loader.exec_module(_graph_mod)
+
 TelemetryStore = _tel_mod.TelemetryStore
+ProjectGraph = _graph_mod.ProjectGraph
 
 
 def create_handler(workspace_root: Path):
@@ -42,6 +49,21 @@ def create_handler(workspace_root: Path):
                 store = TelemetryStore(root_dir=workspace_root)
                 summary = store.get_summary(days=days, limit=100)
                 body = json.dumps(summary).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+
+            if parsed.path == "/api/graph":
+                qs = parse_qs(parsed.query)
+                max_n_param = qs.get("max_nodes", ["120"])[0]
+                max_nodes = int(max_n_param) if str(max_n_param).isdigit() else 120
+                graph = ProjectGraph(root_dir=workspace_root)
+                graph_data = graph.export_graph_data(max_nodes=max_nodes, auto_build=True)
+                body = json.dumps(graph_data).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Cache-Control", "no-store")

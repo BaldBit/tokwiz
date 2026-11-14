@@ -73,9 +73,16 @@ Every TokWiz benchmark measures **Net Workflow Savings**—explicitly deducting 
 ## 30-Second Quickstart
 
 ### 1. Install `tokwiz`
+
 ```bash
-git clone https://github.com/BaldBit/tokwiz.git && cd tokwiz
-pip install -e .
+# Option A: One-Line Install from Latest GitHub Release Bundle (No git clone required)
+curl -fsSL https://github.com/BaldBit/tokwiz/releases/latest/download/install.sh | bash
+
+# Option B: Single-File Standalone Executable (.pyz) from GitHub Releases
+curl -fsSL https://github.com/BaldBit/tokwiz/releases/latest/download/tokwiz.pyz -o tokwiz && chmod +x tokwiz
+
+# Option C: From Source
+git clone https://github.com/BaldBit/tokwiz.git && cd tokwiz && pip install -e .
 ```
 
 ### 2. Wire into Your AI Agents (`tokwiz init`)

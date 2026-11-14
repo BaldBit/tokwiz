@@ -152,6 +152,20 @@ def handle_post_turn(payload: Dict[str, object], default_root: Optional[Path] = 
     engine = cal_mod.CalibrationEngine(root_dir=workspace_root)
     record = engine.reconcile_turn(forecast=forecast, usage_payload=usage_payload)
 
+    # Automatically refresh the Tier 2 Project Graph after each turn so any newly
+    # created or edited files are indexed immediately (<40ms incremental update).
+    try:
+        graph_spec = importlib.util.spec_from_file_location(
+            "project_graph", _SCRIPTS_DIR / "project-graph.py"
+        )
+        if graph_spec and graph_spec.loader:
+            graph_mod = importlib.util.module_from_spec(graph_spec)
+            sys.modules["project_graph"] = graph_mod
+            graph_spec.loader.exec_module(graph_mod)
+            graph_mod.ProjectGraph(root_dir=workspace_root).build(force=False)
+    except Exception:
+        pass
+
     return {
         "decision": "allow",
         "reconciled": True,

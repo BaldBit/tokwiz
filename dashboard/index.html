@@ -3,12 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TokWiz — Token Optimization & Cost Variance Dashboard</title>
+  <title>TokWiz — Token Analytics & Project Graph Visualizer</title>
   <style>
     :root {
       color-scheme: dark light;
       --bg: #0b0f17;
       --card: #131b2e;
+      --card-alt: #0f1626;
       --border: #23304d;
       --text: #e6edf7;
       --muted: #8ea0c0;
@@ -32,39 +33,130 @@
       align-items: center;
       flex-wrap: wrap;
       gap: 16px;
-      margin-bottom: 24px;
+      margin-bottom: 22px;
       padding-bottom: 16px;
       border-bottom: 1px solid var(--border);
     }
     header h1 { font-size: 1.45rem; font-weight: 700; letter-spacing: -0.02em; }
     header p { color: var(--muted); font-size: 0.9rem; }
-    .controls { display: flex; gap: 10px; align-items: center; }
-    button {
+    .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    button, input[type="search"], select {
       background: var(--card);
       color: var(--text);
       border: 1px solid var(--border);
       padding: 8px 14px;
       border-radius: 8px;
-      cursor: pointer;
       font-size: 0.85rem;
       font-weight: 600;
     }
-    button:hover { border-color: var(--accent); }
+    button { cursor: pointer; }
+    button:hover, button.active { border-color: var(--accent); color: var(--accent); }
     .kpi-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-      gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 14px;
       margin-bottom: 24px;
     }
     .kpi-card {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 18px 20px;
+      padding: 16px 18px;
     }
-    .kpi-label { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
-    .kpi-value { font-size: 1.65rem; font-weight: 700; margin: 6px 0 4px; font-variant-numeric: tabular-nums; }
-    .kpi-sub { font-size: 0.82rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .kpi-label { font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+    .kpi-value { font-size: 1.55rem; font-weight: 700; margin: 6px 0 4px; font-variant-numeric: tabular-nums; }
+    .kpi-sub { font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+    /* Graph Visualizer Section */
+    .graph-section {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+    .graph-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .graph-header h2 { font-size: 1.05rem; font-weight: 700; }
+    .graph-layout {
+      display: grid;
+      grid-template-columns: 1fr 330px;
+      gap: 16px;
+    }
+    @media (max-width: 960px) {
+      .graph-layout { grid-template-columns: 1fr; }
+    }
+    .graph-stage {
+      background: var(--card-alt);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      position: relative;
+      overflow: hidden;
+    }
+    #projectGraphCanvas {
+      width: 100%;
+      height: 430px;
+      display: block;
+      cursor: grab;
+    }
+    #projectGraphCanvas:active { cursor: grabbing; }
+    .graph-legend {
+      position: absolute;
+      bottom: 10px;
+      left: 12px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      background: rgba(11, 15, 23, 0.85);
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .legend-dot {
+      display: inline-block;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      margin-right: 5px;
+      vertical-align: middle;
+    }
+    .graph-sidebar {
+      background: var(--card-alt);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .graph-sidebar h3 { font-size: 0.92rem; color: var(--accent); }
+    .inspector-box {
+      font-size: 0.82rem;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      line-height: 1.55;
+    }
+    .inspector-box code {
+      display: block;
+      margin-top: 6px;
+      padding: 6px 8px;
+      background: #080c14;
+      border-radius: 6px;
+      color: var(--emerald);
+      font-size: 0.76rem;
+      word-break: break-all;
+    }
+
     .charts-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
@@ -83,7 +175,7 @@
       margin-bottom: 12px;
       color: var(--text);
     }
-    canvas { width: 100%; height: 230px; display: block; }
+    .chart-card canvas { width: 100%; height: 230px; display: block; }
     .table-card {
       background: var(--card);
       border: 1px solid var(--border);
@@ -119,11 +211,11 @@
 <body>
   <header>
     <div>
-      <h1>⚡ TokWiz Optimization & Cost Analytics</h1>
-      <p>Forecasted Cost vs. Real Billed Cost Reconciliation · Self-Calibration · Guardrail Telemetry</p>
+      <h1>⚡ TokWiz Optimization, Cost Variance & Project Graph Dashboard</h1>
+      <p>Interactive Tier 2 Codebase Graph (Personalized PageRank) · Pre-Prompt Forecast vs. Real Billed Cost</p>
     </div>
     <div class="controls">
-      <button id="refreshBtn" type="button">Refresh Live Telemetry</button>
+      <button id="refreshBtn" type="button">Refresh Live Data</button>
       <button id="demoBtn" type="button">Load Sample Session</button>
     </div>
   </header>
@@ -150,9 +242,50 @@
       <div class="kpi-sub" id="kpiTurnsSub">Across 0 turns</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">KV Prompt Cache Hit %</div>
-      <div class="kpi-value" id="kpiCacheHit" style="color: var(--violet);">0.0%</div>
-      <div class="kpi-sub">Cached Input / Total Input</div>
+      <div class="kpi-label">Project Graph Index</div>
+      <div class="kpi-value" id="kpiGraphNodes" style="color: var(--violet);">0 nodes</div>
+      <div class="kpi-sub" id="kpiGraphSub">0 files · 0 edges (Auto-updating)</div>
+    </div>
+  </section>
+
+  <!-- Interactive Tier 2 Project Graph Visualizer -->
+  <section class="graph-section" aria-label="Interactive Project Graph Visualizer">
+    <div class="graph-header">
+      <div>
+        <h2>🧭 Interactive Tier 2 Project Graph Visualizer (Tree-Sitter AST + Personalized PageRank)</h2>
+        <p style="font-size: 0.82rem; color: var(--muted);">Drag nodes to rearrange · Click any node to inspect its exact line numbers, signature, callers, and callees</p>
+      </div>
+      <div class="controls">
+        <input type="search" id="graphSearchInput" placeholder="Search symbol or file..." />
+        <select id="edgeFilterSelect" aria-label="Edge Type Filter">
+          <option value="ALL">All Edges (CALLS + DEFINES + IMPORTS)</option>
+          <option value="CALLS">CALLS / INHERITS Only</option>
+          <option value="DEFINES">DEFINES Only</option>
+          <option value="IMPORTS">IMPORTS Only</option>
+        </select>
+        <button id="resetGraphBtn" type="button">Re-Center Layout</button>
+      </div>
+    </div>
+
+    <div class="graph-layout">
+      <div class="graph-stage">
+        <canvas id="projectGraphCanvas" width="900" height="430"></canvas>
+        <div class="graph-legend">
+          <span><i class="legend-dot" style="background:#38bdf8"></i>File</span>
+          <span><i class="legend-dot" style="background:#a78bfa"></i>Class / Interface</span>
+          <span><i class="legend-dot" style="background:#34d399"></i>Function</span>
+          <span><i class="legend-dot" style="background:#fbbf24"></i>Method</span>
+        </div>
+      </div>
+
+      <aside class="graph-sidebar">
+        <h3>Selected Symbol Inspector</h3>
+        <div class="inspector-box" id="nodeInspector">
+          Click or search any node in the graph to inspect its exact <code>file:Lstart-Lend</code> coordinates, PageRank centrality score, incoming callers, and outgoing callees.
+        </div>
+        <h3>Top PageRank Symbol Hubs</h3>
+        <canvas id="hubsChartCanvas" width="295" height="175" style="height:175px;"></canvas>
+      </aside>
     </div>
   </section>
 
@@ -235,6 +368,298 @@
       ]
     };
 
+    const KIND_COLORS = {
+      file: "#38bdf8",
+      class: "#a78bfa",
+      interface: "#a78bfa",
+      type: "#f472b6",
+      function: "#34d399",
+      method: "#fbbf24"
+    };
+
+    let graphState = {
+      nodes: [],
+      edges: [],
+      selectedNode: null,
+      draggingNode: null,
+      searchTerm: "",
+      edgeFilter: "ALL"
+    };
+
+    function initGraphSimulation(graphData) {
+      document.getElementById("kpiGraphNodes").textContent = `${graphData.total_nodes || 0} nodes`;
+      document.getElementById("kpiGraphSub").textContent = `${graphData.total_files || 0} files · ${graphData.total_edges || 0} edges (Auto-updating)`;
+
+      const canvas = document.getElementById("projectGraphCanvas");
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      const rawNodes = (graphData.nodes || []).slice(0, 65);
+      const nodeIds = new Set(rawNodes.map(n => n.id));
+
+      graphState.nodes = rawNodes.map((n, idx) => {
+        const angle = (2 * Math.PI * idx) / Math.max(1, rawNodes.length);
+        const radius = n.kind === "file" ? 150 : (n.kind === "class" ? 95 : 130);
+        return {
+          ...n,
+          x: cx + Math.cos(angle) * radius + ((idx * 17) % 30 - 15),
+          y: cy + Math.sin(angle) * radius + ((idx * 23) % 30 - 15),
+          vx: 0,
+          vy: 0,
+          r: Math.max(6, Math.min(15, 6 + Math.sqrt(n.pagerank || 1) * 2.2))
+        };
+      });
+
+      graphState.edges = (graphData.edges || []).filter(
+        e => nodeIds.has(e.source) && nodeIds.has(e.target)
+      );
+
+      // Run 70 deterministic force-relaxation ticks upfront for a clean layout
+      for (let i = 0; i < 70; i++) {
+        stepForceLayout();
+      }
+      if (graphState.nodes.length > 0 && !graphState.selectedNode) {
+        const firstSym = graphState.nodes.find(n => n.kind !== "file") || graphState.nodes[0];
+        selectGraphNode(firstSym);
+      }
+      drawProjectGraph();
+      drawHubsChart(graphData.top_hubs || []);
+    }
+
+    function stepForceLayout() {
+      const canvas = document.getElementById("projectGraphCanvas");
+      const W = canvas.width;
+      const H = canvas.height;
+      const nodes = graphState.nodes;
+      const nodeMap = new Map(nodes.map(n => [n.id, n]));
+
+      // Repulsion
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const a = nodes[i];
+          const b = nodes[j];
+          let dx = b.x - a.x;
+          let dy = b.y - a.y;
+          let distSq = dx * dx + dy * dy + 0.1;
+          if (distSq < 14000) {
+            const f = 520 / distSq;
+            a.vx -= dx * f;
+            a.vy -= dy * f;
+            b.vx += dx * f;
+            b.vy += dy * f;
+          }
+        }
+      }
+
+      // Spring attraction along edges
+      for (const e of graphState.edges) {
+        const s = nodeMap.get(e.source);
+        const t = nodeMap.get(e.target);
+        if (!s || !t) continue;
+        const dx = t.x - s.x;
+        const dy = t.y - s.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const targetLen = e.type === "DEFINES" ? 55 : 85;
+        const force = (dist - targetLen) * 0.018;
+        const fx = (dx / dist) * force;
+        const fy = (dy / dist) * force;
+        s.vx += fx;
+        s.vy += fy;
+        t.vx -= fx;
+        t.vy -= fy;
+      }
+
+      // Center gravity + bounds
+      for (const n of nodes) {
+        if (n === graphState.draggingNode) continue;
+        n.vx += (W / 2 - n.x) * 0.008;
+        n.vy += (H / 2 - n.y) * 0.008;
+        n.vx *= 0.78;
+        n.vy *= 0.78;
+        n.x = Math.max(28, Math.min(W - 28, n.x + n.vx));
+        n.y = Math.max(24, Math.min(H - 36, n.y + n.vy));
+      }
+    }
+
+    function drawProjectGraph() {
+      const canvas = document.getElementById("projectGraphCanvas");
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const nodeMap = new Map(graphState.nodes.map(n => [n.id, n]));
+      const searchLow = graphState.searchTerm.toLowerCase();
+      const sel = graphState.selectedNode;
+      const neighborIds = new Set();
+
+      if (sel) {
+        neighborIds.add(sel.id);
+        for (const e of graphState.edges) {
+          if (e.source === sel.id) neighborIds.add(e.target);
+          if (e.target === sel.id) neighborIds.add(e.source);
+        }
+      }
+
+      // Draw edges
+      for (const e of graphState.edges) {
+        if (graphState.edgeFilter !== "ALL") {
+          if (graphState.edgeFilter === "CALLS" && e.type !== "CALLS" && e.type !== "INHERITS") continue;
+          if (graphState.edgeFilter === "DEFINES" && e.type !== "DEFINES") continue;
+          if (graphState.edgeFilter === "IMPORTS" && e.type !== "IMPORTS") continue;
+        }
+        const s = nodeMap.get(e.source);
+        const t = nodeMap.get(e.target);
+        if (!s || !t) continue;
+
+        const isHighlighted = sel && (e.source === sel.id || e.target === sel.id);
+        ctx.strokeStyle = isHighlighted
+          ? (e.type === "CALLS" ? "#34d399" : "#38bdf8")
+          : "rgba(142, 160, 192, 0.22)";
+        ctx.lineWidth = isHighlighted ? 2.0 : 1.0;
+
+        ctx.beginPath();
+        ctx.moveTo(s.x, s.y);
+        ctx.lineTo(t.x, t.y);
+        ctx.stroke();
+      }
+
+      // Draw nodes
+      for (const n of graphState.nodes) {
+        const matchesSearch = searchLow && (
+          n.name.toLowerCase().includes(searchLow) ||
+          n.file_path.toLowerCase().includes(searchLow)
+        );
+        const isSelected = sel && sel.id === n.id;
+        const isDimmed = (sel && !neighborIds.has(n.id)) || (searchLow && !matchesSearch);
+
+        ctx.save();
+        ctx.globalAlpha = isDimmed ? 0.32 : 1.0;
+        ctx.fillStyle = KIND_COLORS[n.kind] || "#38bdf8";
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (isSelected || matchesSearch) {
+          ctx.strokeStyle = "#ffffff";
+          ctx.lineWidth = 2.5;
+          ctx.stroke();
+        }
+
+        ctx.fillStyle = "#e6edf7";
+        ctx.font = isSelected ? "bold 11px sans-serif" : "10.5px sans-serif";
+        ctx.fillText(n.name, n.x + n.r + 4, n.y + 3);
+        ctx.restore();
+      }
+    }
+
+    function selectGraphNode(node) {
+      graphState.selectedNode = node;
+      const box = document.getElementById("nodeInspector");
+      if (!node) return;
+
+      const nodeMap = new Map(graphState.nodes.map(n => [n.id, n]));
+      const callers = [];
+      const callees = [];
+      for (const e of graphState.edges) {
+        if (e.target === node.id && e.type === "CALLS" && nodeMap.has(e.source)) {
+          callers.push(nodeMap.get(e.source).name);
+        }
+        if (e.source === node.id && e.type === "CALLS" && nodeMap.has(e.target)) {
+          callees.push(nodeMap.get(e.target).name);
+        }
+      }
+
+      box.innerHTML = `
+        <div><strong>${node.qualified_name}</strong> <span class="tag">${node.kind}</span></div>
+        <div style="color:var(--muted); margin-top:4px;">Location: <strong>${node.file_path}:L${node.start_line}-L${node.end_line}</strong></div>
+        <div style="color:var(--muted);">PageRank Score: <strong>${node.pagerank}</strong> · In: ${node.in_degree} · Out: ${node.out_degree}</div>
+        <code>${node.signature}</code>
+        <div style="margin-top:8px; font-size:0.78rem;">
+          <strong>Callers (${callers.length}):</strong> ${callers.length ? callers.slice(0, 5).join(", ") : "None in slice"}<br/>
+          <strong>Callees (${callees.length}):</strong> ${callees.length ? callees.slice(0, 5).join(", ") : "None in slice"}
+        </div>
+      `;
+      drawProjectGraph();
+    }
+
+    function drawHubsChart(hubs) {
+      const canvas = document.getElementById("hubsChartCanvas");
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const top = hubs.slice(0, 6);
+      if (!top.length) return;
+
+      const maxPr = Math.max(0.1, ...top.map(h => h.pagerank));
+      const rowH = canvas.height / top.length;
+
+      top.forEach((h, i) => {
+        const y = i * rowH;
+        const bw = (h.pagerank / maxPr) * 145;
+        ctx.fillStyle = "#e6edf7";
+        ctx.font = "11px sans-serif";
+        ctx.fillText(h.name.slice(0, 16), 4, y + rowH * 0.65);
+
+        ctx.fillStyle = KIND_COLORS[h.kind] || "#38bdf8";
+        ctx.fillRect(112, y + 6, Math.max(6, bw), rowH - 11);
+
+        ctx.fillStyle = "#8ea0c0";
+        ctx.fillText(h.pagerank.toFixed(1), 118 + bw, y + rowH * 0.65);
+      });
+    }
+
+    function setupGraphInteractions() {
+      const canvas = document.getElementById("projectGraphCanvas");
+      const getCoords = (evt) => {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        return {
+          x: (evt.clientX - rect.left) * scaleX,
+          y: (evt.clientY - rect.top) * scaleY
+        };
+      };
+
+      canvas.addEventListener("mousedown", (evt) => {
+        const { x, y } = getCoords(evt);
+        const hit = graphState.nodes.find(n => Math.hypot(n.x - x, n.y - y) <= n.r + 5);
+        if (hit) {
+          graphState.draggingNode = hit;
+          selectGraphNode(hit);
+        }
+      });
+
+      window.addEventListener("mousemove", (evt) => {
+        if (!graphState.draggingNode) return;
+        const { x, y } = getCoords(evt);
+        graphState.draggingNode.x = x;
+        graphState.draggingNode.y = y;
+        drawProjectGraph();
+      });
+
+      window.addEventListener("mouseup", () => {
+        graphState.draggingNode = null;
+      });
+
+      document.getElementById("graphSearchInput").addEventListener("input", (evt) => {
+        graphState.searchTerm = evt.target.value.trim();
+        if (graphState.searchTerm) {
+          const match = graphState.nodes.find(
+            n => n.name.toLowerCase().includes(graphState.searchTerm.toLowerCase())
+          );
+          if (match) selectGraphNode(match);
+        }
+        drawProjectGraph();
+      });
+
+      document.getElementById("edgeFilterSelect").addEventListener("change", (evt) => {
+        graphState.edgeFilter = evt.target.value;
+        drawProjectGraph();
+      });
+
+      document.getElementById("resetGraphBtn").addEventListener("click", () => {
+        for (let i = 0; i < 60; i++) stepForceLayout();
+        drawProjectGraph();
+      });
+    }
+
     function renderDashboard(data) {
       document.getElementById("kpiTokensSaved").textContent = Number(data.net_tokens_saved || 0).toLocaleString();
       document.getElementById("kpiTokensSub").textContent = `Real: ${Number(data.total_real_tokens || 0).toLocaleString()} vs Baseline: ${Number(data.total_unoptimized_tokens || 0).toLocaleString()}`;
@@ -242,10 +667,9 @@
       document.getElementById("kpiSpentSub").textContent = `Real Spent: $${Number(data.total_real_cost_usd || 0).toFixed(4)} (Forecast: $${Number(data.total_forecast_cost_usd || 0).toFixed(4)})`;
       document.getElementById("kpiMape").textContent = `${Number(data.recent_mape_pct || data.mape_pct || 0).toFixed(1)}% MAPE`;
       const delta = Number(data.total_cost_delta_usd || 0);
-      document.getElementById("kpiDeltaSub").textContent = `ΔC: ${delta >= 0 ? "+" : ""}$${delta.toFixed(4)} · All-turn: ${Number(data.mape_pct || 0).toFixed(1)}%`;
+      document.getElementById("kpiDeltaSub").textContent = `ΔC: ${delta >= 0 ? "+" : ""}$${delta.toFixed(4)} · Cache Hit: ${Number(data.cache_hit_ratio_pct || 0).toFixed(1)}%`;
       document.getElementById("kpiReduction").textContent = `${Number(data.avg_reduction_pct || 0).toFixed(1)}%`;
       document.getElementById("kpiTurnsSub").textContent = `Across ${data.total_turns || 0} reconciled turns`;
-      document.getElementById("kpiCacheHit").textContent = `${Number(data.cache_hit_ratio_pct || 0).toFixed(1)}%`;
 
       drawCostVarianceChart(data.turns || []);
       drawTokensTimelineChart(data.turns || []);
@@ -274,7 +698,6 @@
 
       const stepX = turns.length > 1 ? w / (turns.length - 1) : w / 2;
 
-      // Residual error bars
       turns.forEach((t, i) => {
         const x = pad.l + i * stepX;
         const yF = pad.t + h - (t.forecast_cost_usd / maxCost) * h;
@@ -287,7 +710,6 @@
         ctx.stroke();
       });
 
-      // Forecast line (accent blue)
       ctx.strokeStyle = "#38bdf8";
       ctx.lineWidth = 2.5;
       ctx.beginPath();
@@ -298,7 +720,6 @@
       });
       ctx.stroke();
 
-      // Real line (emerald)
       ctx.strokeStyle = "#34d399";
       ctx.lineWidth = 2.5;
       ctx.beginPath();
@@ -436,18 +857,27 @@
 
     async function loadLiveStats() {
       try {
-        const res = await fetch("/api/stats");
-        const data = await res.json();
-        if (data && data.total_turns > 0) {
-          renderDashboard(data);
+        const [statsRes, graphRes] = await Promise.all([
+          fetch("/api/stats"),
+          fetch("/api/graph")
+        ]);
+        const statsData = await statsRes.json();
+        const graphData = await graphRes.json();
+
+        if (statsData && statsData.total_turns > 0) {
+          renderDashboard(statsData);
         } else {
           renderDashboard(SAMPLE_DATA);
+        }
+        if (graphData && graphData.nodes) {
+          initGraphSimulation(graphData);
         }
       } catch (_err) {
         renderDashboard(SAMPLE_DATA);
       }
     }
 
+    setupGraphInteractions();
     document.getElementById("refreshBtn").addEventListener("click", loadLiveStats);
     document.getElementById("demoBtn").addEventListener("click", () => renderDashboard(SAMPLE_DATA));
     loadLiveStats();
