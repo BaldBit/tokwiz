@@ -21,7 +21,7 @@ permissions:
 jobs:
   version-and-release:
     name: Semantic Version, Build & GitHub Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: "!contains(github.event.head_commit.message, 'chore(release):') && !contains(github.event.head_commit.message, '[skip release]')"
 
     steps:

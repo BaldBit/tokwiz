@@ -19,8 +19,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        python-version: ["3.9", "3.11", "3.12", "3.13"]
+        os: [ubuntu-24.04, macos-latest]
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
       - name: Checkout repository
