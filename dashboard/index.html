@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TokWiz — Token Analytics & Project Graph Visualizer</title>
+  <title>TokWiz — 3D Codebase Graph & Real-Time Cost Analytics</title>
   <style>
     :root {
-      color-scheme: dark light;
-      --bg: #0b0f17;
-      --card: #131b2e;
-      --card-alt: #0f1626;
-      --border: #23304d;
-      --text: #e6edf7;
-      --muted: #8ea0c0;
+      color-scheme: dark;
+      --bg: #070b12;
+      --card: #0e1525;
+      --card-alt: #090e1a;
+      --border: #1e2c47;
+      --text: #eef2ff;
+      --muted: #8b9dc3;
       --accent: #38bdf8;
       --emerald: #34d399;
       --amber: #fbbf24;
@@ -22,10 +22,11 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
-      background: var(--bg);
+      background: radial-gradient(circle at 50% 0%, #111c35 0%, var(--bg) 65%);
       color: var(--text);
-      padding: 24px 32px;
+      padding: 22px 28px;
       line-height: 1.5;
+      min-height: 100vh;
     }
     header {
       display: flex;
@@ -33,47 +34,74 @@
       align-items: center;
       flex-wrap: wrap;
       gap: 16px;
-      margin-bottom: 22px;
-      padding-bottom: 16px;
+      margin-bottom: 18px;
+      padding-bottom: 14px;
       border-bottom: 1px solid var(--border);
     }
-    header h1 { font-size: 1.45rem; font-weight: 700; letter-spacing: -0.02em; }
-    header p { color: var(--muted); font-size: 0.9rem; }
-    .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .title-group { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    header h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.02em; }
+    .mode-badge {
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.74rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .mode-badge.live {
+      background: rgba(52, 211, 153, 0.16);
+      color: var(--emerald);
+      border: 1px solid rgba(52, 211, 153, 0.4);
+    }
+    .mode-badge.demo {
+      background: rgba(251, 191, 36, 0.18);
+      color: var(--amber);
+      border: 1px solid rgba(251, 191, 36, 0.45);
+    }
+    header p { color: var(--muted); font-size: 0.86rem; margin-top: 2px; }
+    .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     button, input[type="search"], select {
       background: var(--card);
       color: var(--text);
       border: 1px solid var(--border);
-      padding: 8px 14px;
+      padding: 7px 13px;
       border-radius: 8px;
-      font-size: 0.85rem;
+      font-size: 0.82rem;
       font-weight: 600;
+      transition: border-color 0.15s, background 0.15s;
     }
     button { cursor: pointer; }
-    button:hover, button.active { border-color: var(--accent); color: var(--accent); }
+    button:hover, button.active {
+      border-color: var(--accent);
+      background: rgba(56, 189, 248, 0.12);
+      color: var(--accent);
+    }
+
     .kpi-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
       gap: 14px;
-      margin-bottom: 24px;
+      margin-bottom: 20px;
     }
     .kpi-card {
-      background: var(--card);
+      background: rgba(14, 21, 37, 0.88);
       border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 16px 18px;
+      padding: 15px 18px;
+      backdrop-filter: blur(8px);
     }
-    .kpi-label { font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
-    .kpi-value { font-size: 1.55rem; font-weight: 700; margin: 6px 0 4px; font-variant-numeric: tabular-nums; }
-    .kpi-sub { font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .kpi-label { font-size: 0.73rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+    .kpi-value { font-size: 1.55rem; font-weight: 700; margin: 5px 0 3px; font-variant-numeric: tabular-nums; }
+    .kpi-sub { font-size: 0.78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 
-    /* Graph Visualizer Section */
+    /* 3D Graph Visualizer Section */
     .graph-section {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 14px;
-      padding: 20px;
-      margin-bottom: 24px;
+      padding: 18px 20px;
+      margin-bottom: 22px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
     }
     .graph-header {
       display: flex;
@@ -86,82 +114,133 @@
     .graph-header h2 { font-size: 1.05rem; font-weight: 700; }
     .graph-layout {
       display: grid;
-      grid-template-columns: 1fr 330px;
+      grid-template-columns: 1fr 350px;
       gap: 16px;
     }
-    @media (max-width: 960px) {
+    @media (max-width: 1024px) {
       .graph-layout { grid-template-columns: 1fr; }
     }
     .graph-stage {
-      background: var(--card-alt);
+      background: radial-gradient(circle at 50% 50%, #101b33 0%, #060911 100%);
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: 12px;
       position: relative;
       overflow: hidden;
+      height: 540px;
     }
     #projectGraphCanvas {
       width: 100%;
-      height: 430px;
+      height: 100%;
       display: block;
       cursor: grab;
+      user-select: none;
     }
     #projectGraphCanvas:active { cursor: grabbing; }
+    .graph-hud-top {
+      position: absolute;
+      top: 12px;
+      left: 14px;
+      display: flex;
+      gap: 8px;
+      pointer-events: none;
+      font-size: 0.75rem;
+      color: var(--muted);
+      background: rgba(7, 11, 18, 0.78);
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    .graph-zoom-controls {
+      position: absolute;
+      top: 12px;
+      right: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .graph-zoom-controls button {
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      display: grid;
+      place-items: center;
+      font-size: 1rem;
+      background: rgba(14, 21, 37, 0.9);
+    }
     .graph-legend {
       position: absolute;
-      bottom: 10px;
-      left: 12px;
+      bottom: 12px;
+      left: 14px;
       display: flex;
-      gap: 12px;
+      gap: 14px;
       flex-wrap: wrap;
-      background: rgba(11, 15, 23, 0.85);
-      padding: 6px 12px;
+      background: rgba(7, 11, 18, 0.85);
+      padding: 7px 14px;
       border-radius: 999px;
       border: 1px solid var(--border);
       font-size: 0.75rem;
-      color: var(--muted);
+      color: var(--text);
     }
     .legend-dot {
       display: inline-block;
-      width: 9px;
-      height: 9px;
+      width: 10px;
+      height: 10px;
       border-radius: 50%;
-      margin-right: 5px;
+      margin-right: 6px;
       vertical-align: middle;
+      box-shadow: 0 0 8px currentColor;
     }
     .graph-sidebar {
       background: var(--card-alt);
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: 12px;
       padding: 16px;
       display: flex;
       flex-direction: column;
       gap: 12px;
     }
-    .graph-sidebar h3 { font-size: 0.92rem; color: var(--accent); }
+    .graph-sidebar h3 {
+      font-size: 0.84rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--accent);
+    }
     .inspector-box {
       font-size: 0.82rem;
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 12px;
+      border-radius: 10px;
+      padding: 13px;
       line-height: 1.55;
     }
     .inspector-box code {
       display: block;
-      margin-top: 6px;
-      padding: 6px 8px;
-      background: #080c14;
+      margin-top: 7px;
+      padding: 7px 9px;
+      background: #050811;
+      border: 1px solid #192540;
       border-radius: 6px;
       color: var(--emerald);
       font-size: 0.76rem;
       word-break: break-all;
     }
+    .pill-list { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+    .pill {
+      font-size: 0.73rem;
+      padding: 2px 8px;
+      border-radius: 6px;
+      background: rgba(56, 189, 248, 0.13);
+      color: var(--accent);
+      cursor: pointer;
+      border: 1px solid rgba(56, 189, 248, 0.25);
+    }
+    .pill:hover { background: rgba(56, 189, 248, 0.26); }
 
     .charts-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
-      gap: 20px;
-      margin-bottom: 24px;
+      gap: 18px;
+      margin-bottom: 22px;
     }
     .chart-card {
       background: var(--card);
@@ -170,12 +249,13 @@
       padding: 18px 20px;
     }
     .chart-card h2 {
-      font-size: 0.95rem;
+      font-size: 0.92rem;
       font-weight: 600;
       margin-bottom: 12px;
       color: var(--text);
     }
-    .chart-card canvas { width: 100%; height: 230px; display: block; }
+    .chart-card canvas { width: 100%; height: 220px; display: block; }
+
     .table-card {
       background: var(--card);
       border: 1px solid var(--border);
@@ -183,25 +263,32 @@
       padding: 18px 20px;
       overflow-x: auto;
     }
-    .table-card h2 { font-size: 1rem; margin-bottom: 12px; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+    .table-card h2 { font-size: 0.98rem; margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.83rem; font-variant-numeric: tabular-nums; }
     th, td {
       padding: 10px 12px;
       text-align: left;
       border-bottom: 1px solid var(--border);
     }
-    th { color: var(--muted); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; }
+    th { color: var(--muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; }
+    .empty-state {
+      text-align: center;
+      padding: 28px 16px;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
     .tag {
       display: inline-block;
       padding: 2px 8px;
       border-radius: 999px;
-      font-size: 0.72rem;
+      font-size: 0.71rem;
       font-weight: 600;
       background: rgba(56, 189, 248, 0.15);
       color: var(--accent);
       margin-right: 4px;
     }
     .tag.ON_TARGET { background: rgba(52, 211, 153, 0.16); color: var(--emerald); }
+    .tag.PENDING_FORECAST { background: rgba(167, 139, 250, 0.18); color: var(--violet); }
     .tag.EXTRA_TOOL_LOOPS, .tag.REASONING_SPIKE, .tag.CACHE_MISS_DRIFT, .tag.UNBOUNDED_TOOL_OUTPUT {
       background: rgba(251, 191, 36, 0.16);
       color: var(--amber);
@@ -211,80 +298,91 @@
 <body>
   <header>
     <div>
-      <h1>⚡ TokWiz Optimization, Cost Variance & Project Graph Dashboard</h1>
-      <p>Interactive Tier 2 Codebase Graph (Personalized PageRank) · Pre-Prompt Forecast vs. Real Billed Cost</p>
+      <div class="title-group">
+        <h1>⚡ TokWiz 3D Codebase Graph & Cost Analytics</h1>
+        <span id="modeBadge" class="mode-badge live">● Live Workspace Telemetry</span>
+      </div>
+      <p>360° Interactive 3D AST + PageRank Graph · Pre-Prompt Cost Forecasting · Real Billed Cost Reconciliation</p>
     </div>
     <div class="controls">
-      <button id="refreshBtn" type="button">Refresh Live Data</button>
-      <button id="demoBtn" type="button">Load Sample Session</button>
+      <button id="liveBtn" type="button" class="active">Live Workspace Data</button>
+      <button id="demoBtn" type="button">Preview Sample Session</button>
     </div>
   </header>
 
   <section class="kpi-grid" aria-label="Key Performance Indicators">
     <div class="kpi-card">
-      <div class="kpi-label">Total Tokens Saved</div>
+      <div class="kpi-label">Net Tokens Saved</div>
       <div class="kpi-value" id="kpiTokensSaved">0</div>
-      <div class="kpi-sub" id="kpiTokensSub">Net of skill/graph overhead</div>
+      <div class="kpi-sub" id="kpiTokensSub">0 reconciled turns · 0 guardrail intercepts</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-label">Net $ Saved</div>
       <div class="kpi-value" id="kpiCostSaved" style="color: var(--emerald);">$0.0000</div>
-      <div class="kpi-sub" id="kpiSpentSub">Real Spent: $0.0000</div>
+      <div class="kpi-sub" id="kpiSpentSub">Real Spent: $0.0000 · Forecast: $0.0000</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-label">Forecast vs. Real (ΔC & MAPE)</div>
-      <div class="kpi-value" id="kpiMape">0.0%</div>
-      <div class="kpi-sub" id="kpiDeltaSub">ΔC: $0.0000 · Target ≤ 20%</div>
+      <div class="kpi-value" id="kpiMape">—</div>
+      <div class="kpi-sub" id="kpiDeltaSub">Run a prompt to measure ΔC & MAPE %</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-label">Avg Token Reduction %</div>
       <div class="kpi-value" id="kpiReduction" style="color: var(--accent);">0.0%</div>
-      <div class="kpi-sub" id="kpiTurnsSub">Across 0 turns</div>
+      <div class="kpi-sub" id="kpiTurnsSub">0 turns recorded in telemetry.db</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">Project Graph Index</div>
+      <div class="kpi-label">3D Project Graph Index</div>
       <div class="kpi-value" id="kpiGraphNodes" style="color: var(--violet);">0 nodes</div>
-      <div class="kpi-sub" id="kpiGraphSub">0 files · 0 edges (Auto-updating)</div>
+      <div class="kpi-sub" id="kpiGraphSub">0 files · 0 edges (Live SQLite index)</div>
     </div>
   </section>
 
-  <!-- Interactive Tier 2 Project Graph Visualizer -->
-  <section class="graph-section" aria-label="Interactive Project Graph Visualizer">
+  <!-- 3D Rotatable Project Graph Visualizer -->
+  <section class="graph-section" aria-label="3D Rotatable Project Graph Visualizer">
     <div class="graph-header">
       <div>
-        <h2>🧭 Interactive Tier 2 Project Graph Visualizer (Tree-Sitter AST + Personalized PageRank)</h2>
-        <p style="font-size: 0.82rem; color: var(--muted);">Drag nodes to rearrange · Click any node to inspect its exact line numbers, signature, callers, and callees</p>
+        <h2>🌐 3D Interactive Project Graph (Drag to Rotate 360° · Scroll to Zoom · Click Node to Inspect)</h2>
       </div>
       <div class="controls">
-        <input type="search" id="graphSearchInput" placeholder="Search symbol or file..." />
-        <select id="edgeFilterSelect" aria-label="Edge Type Filter">
+        <input type="search" id="graphSearchInput" placeholder="Search function, class, or file..." />
+        <select id="edgeFilterSelect" aria-label="Filter Edges">
           <option value="ALL">All Edges (CALLS + DEFINES + IMPORTS)</option>
           <option value="CALLS">CALLS / INHERITS Only</option>
           <option value="DEFINES">DEFINES Only</option>
           <option value="IMPORTS">IMPORTS Only</option>
         </select>
-        <button id="resetGraphBtn" type="button">Re-Center Layout</button>
+        <button id="autoRotateBtn" type="button" class="active">Auto-Orbit: ON</button>
+        <button id="resetCameraBtn" type="button">Reset 3D View</button>
       </div>
     </div>
 
     <div class="graph-layout">
-      <div class="graph-stage">
-        <canvas id="projectGraphCanvas" width="900" height="430"></canvas>
+      <div class="graph-stage" id="graphStage">
+        <canvas id="projectGraphCanvas" width="960" height="540"></canvas>
+        <div class="graph-hud-top">
+          <span>🖱️ Left-Drag: Rotate 3D Orbit · Scroll: Zoom · Click Sphere: Inspect Symbol & 1-Hop Neighborhood</span>
+        </div>
+        <div class="graph-zoom-controls">
+          <button id="zoomInBtn" type="button" title="Zoom In">+</button>
+          <button id="zoomOutBtn" type="button" title="Zoom Out">−</button>
+        </div>
         <div class="graph-legend">
-          <span><i class="legend-dot" style="background:#38bdf8"></i>File</span>
-          <span><i class="legend-dot" style="background:#a78bfa"></i>Class / Interface</span>
-          <span><i class="legend-dot" style="background:#34d399"></i>Function</span>
-          <span><i class="legend-dot" style="background:#fbbf24"></i>Method</span>
+          <span><i class="legend-dot" style="background:#38bdf8; color:#38bdf8"></i>File Hub</span>
+          <span><i class="legend-dot" style="background:#a78bfa; color:#a78bfa"></i>Class / Interface</span>
+          <span><i class="legend-dot" style="background:#34d399; color:#34d399"></i>Function</span>
+          <span><i class="legend-dot" style="background:#fbbf24; color:#fbbf24"></i>Method</span>
+          <span style="color:var(--emerald)">● Animated Pulses = CALLS Direction</span>
         </div>
       </div>
 
       <aside class="graph-sidebar">
-        <h3>Selected Symbol Inspector</h3>
+        <h3>3D Symbol Inspector</h3>
         <div class="inspector-box" id="nodeInspector">
-          Click or search any node in the graph to inspect its exact <code>file:Lstart-Lend</code> coordinates, PageRank centrality score, incoming callers, and outgoing callees.
+          Click any 3D sphere in the graph (or search above) to inspect its exact <code>file:Lstart-Lend</code> range, PageRank score, callers, and callees.
         </div>
         <h3>Top PageRank Symbol Hubs</h3>
-        <canvas id="hubsChartCanvas" width="295" height="175" style="height:175px;"></canvas>
+        <canvas id="hubsChartCanvas" width="315" height="210" style="height:210px;"></canvas>
       </aside>
     </div>
   </section>
@@ -292,24 +390,24 @@
   <section class="charts-grid" aria-label="Analytics Charts">
     <div class="chart-card">
       <h2>Forecasted Cost vs. Real Billed Cost per Prompt (Dual-Line & Residual Error)</h2>
-      <canvas id="costVarianceCanvas" width="600" height="230"></canvas>
+      <canvas id="costVarianceCanvas" width="600" height="220"></canvas>
     </div>
     <div class="chart-card">
-      <h2>Baseline Unoptimized vs. Real TokWiz Token Usage Over Time</h2>
-      <canvas id="tokensTimelineCanvas" width="600" height="230"></canvas>
+      <h2>Unoptimized Baseline vs. TokWiz Workflow Tokens</h2>
+      <canvas id="tokensTimelineCanvas" width="600" height="220"></canvas>
     </div>
     <div class="chart-card">
       <h2>Token Breakdown by Phase (Context, Graph, Tool Output, Reasoning, Output)</h2>
-      <canvas id="phaseBreakdownCanvas" width="600" height="230"></canvas>
+      <canvas id="phaseBreakdownCanvas" width="600" height="220"></canvas>
     </div>
     <div class="chart-card">
-      <h2>Model Cost Comparison (Forecasted vs. Real vs. Saved $)</h2>
-      <canvas id="modelCostCanvas" width="600" height="230"></canvas>
+      <h2>Model Cost Comparison (Real Billed vs. Net Saved $)</h2>
+      <canvas id="modelCostCanvas" width="600" height="220"></canvas>
     </div>
   </section>
 
   <section class="table-card" aria-label="Live Prompt Audit Log">
-    <h2>Live Prompt Audit Log (Forecast vs. Real Cost Reconciliation)</h2>
+    <h2>Prompt Forecast & Cost Reconciliation Audit Log</h2>
     <table>
       <thead>
         <tr>
@@ -323,7 +421,7 @@
           <th>Real $</th>
           <th>ΔC ($)</th>
           <th>APE %</th>
-          <th>Variance Attribution</th>
+          <th>Status / Variance</th>
         </tr>
       </thead>
       <tbody id="auditTableBody"></tbody>
@@ -331,8 +429,20 @@
   </section>
 
   <script>
+    const KIND_COLORS = {
+      file: "#38bdf8",
+      class: "#a78bfa",
+      interface: "#a78bfa",
+      type: "#f472b6",
+      function: "#34d399",
+      method: "#fbbf24"
+    };
+
     const SAMPLE_DATA = {
       total_turns: 6,
+      total_forecasts: 6,
+      guardrail_events_count: 4,
+      guardrail_tokens_saved: 14200,
       total_forecast_tokens: 24200,
       total_real_tokens: 24950,
       total_unoptimized_tokens: 79400,
@@ -368,223 +478,491 @@
       ]
     };
 
-    const KIND_COLORS = {
-      file: "#38bdf8",
-      class: "#a78bfa",
-      interface: "#a78bfa",
-      type: "#f472b6",
-      function: "#34d399",
-      method: "#fbbf24"
-    };
-
-    let graphState = {
+    /* ==================== 3D ROTATABLE GRAPH ENGINE ==================== */
+    const graph3D = {
       nodes: [],
       edges: [],
+      projected: new Map(),
       selectedNode: null,
-      draggingNode: null,
+      hoveredNode: null,
       searchTerm: "",
-      edgeFilter: "ALL"
+      edgeFilter: "ALL",
+      yaw: 0.55,
+      pitch: 0.32,
+      zoom: 1.0,
+      autoRotate: true,
+      isDragging: false,
+      dragMoved: false,
+      lastMouseX: 0,
+      lastMouseY: 0,
+      pulseTick: 0
     };
 
-    function initGraphSimulation(graphData) {
+    function init3DGraph(graphData) {
       document.getElementById("kpiGraphNodes").textContent = `${graphData.total_nodes || 0} nodes`;
-      document.getElementById("kpiGraphSub").textContent = `${graphData.total_files || 0} files · ${graphData.total_edges || 0} edges (Auto-updating)`;
+      document.getElementById("kpiGraphSub").textContent = `${graphData.total_files || 0} files · ${graphData.total_edges || 0} edges (Live SQLite index)`;
 
-      const canvas = document.getElementById("projectGraphCanvas");
-      const cx = canvas.width / 2;
-      const cy = canvas.height / 2;
-      const rawNodes = (graphData.nodes || []).slice(0, 65);
+      const rawNodes = (graphData.nodes || []).slice(0, 85);
       const nodeIds = new Set(rawNodes.map(n => n.id));
-
-      graphState.nodes = rawNodes.map((n, idx) => {
-        const angle = (2 * Math.PI * idx) / Math.max(1, rawNodes.length);
-        const radius = n.kind === "file" ? 150 : (n.kind === "class" ? 95 : 130);
-        return {
-          ...n,
-          x: cx + Math.cos(angle) * radius + ((idx * 17) % 30 - 15),
-          y: cy + Math.sin(angle) * radius + ((idx * 23) % 30 - 15),
-          vx: 0,
-          vy: 0,
-          r: Math.max(6, Math.min(15, 6 + Math.sqrt(n.pagerank || 1) * 2.2))
-        };
-      });
-
-      graphState.edges = (graphData.edges || []).filter(
+      const edges = (graphData.edges || []).filter(
         e => nodeIds.has(e.source) && nodeIds.has(e.target)
       );
 
-      // Run 70 deterministic force-relaxation ticks upfront for a clean layout
-      for (let i = 0; i < 70; i++) {
-        stepForceLayout();
-      }
-      if (graphState.nodes.length > 0 && !graphState.selectedNode) {
-        const firstSym = graphState.nodes.find(n => n.kind !== "file") || graphState.nodes[0];
-        selectGraphNode(firstSym);
-      }
-      drawProjectGraph();
-      drawHubsChart(graphData.top_hubs || []);
-    }
+      // Assign initial 3D coordinates using Fibonacci sphere grouped by file path
+      const filesList = [...new Set(rawNodes.map(n => n.file_path))];
+      const fileCenters = new Map();
+      filesList.forEach((fp, idx) => {
+        const phi = Math.acos(1 - 2 * (idx + 0.5) / Math.max(1, filesList.length));
+        const theta = Math.PI * (1 + Math.sqrt(5)) * idx;
+        const rad = 165;
+        fileCenters.set(fp, {
+          x: rad * Math.sin(phi) * Math.cos(theta),
+          y: rad * Math.cos(phi) * 0.75,
+          z: rad * Math.sin(phi) * Math.sin(theta)
+        });
+      });
 
-    function stepForceLayout() {
-      const canvas = document.getElementById("projectGraphCanvas");
-      const W = canvas.width;
-      const H = canvas.height;
-      const nodes = graphState.nodes;
-      const nodeMap = new Map(nodes.map(n => [n.id, n]));
+      graph3D.nodes = rawNodes.map((n, idx) => {
+        const fc = fileCenters.get(n.file_path) || { x: 0, y: 0, z: 0 };
+        const localAngle = (idx * 2.39996);
+        const localSpread = n.kind === "file" ? 0 : (n.kind === "class" ? 42 : 74);
+        const zJitter = ((idx * 37) % 60 - 30) * (n.kind === "file" ? 0.1 : 1.0);
+        return {
+          ...n,
+          x: fc.x + Math.cos(localAngle) * localSpread,
+          y: fc.y + Math.sin(localAngle) * localSpread,
+          z: fc.z + zJitter,
+          vx: 0,
+          vy: 0,
+          vz: 0,
+          baseRadius: n.kind === "file" ? 11 : Math.max(6, Math.min(13, 5.5 + Math.sqrt(n.pagerank || 1) * 2.3))
+        };
+      });
 
-      // Repulsion
-      for (let i = 0; i < nodes.length; i++) {
-        for (let j = i + 1; j < nodes.length; j++) {
-          const a = nodes[i];
-          const b = nodes[j];
-          let dx = b.x - a.x;
-          let dy = b.y - a.y;
-          let distSq = dx * dx + dy * dy + 0.1;
-          if (distSq < 14000) {
-            const f = 520 / distSq;
-            a.vx -= dx * f;
-            a.vy -= dy * f;
-            b.vx += dx * f;
-            b.vy += dy * f;
+      graph3D.edges = edges;
+
+      // Run 90 iterations of 3D Force-Directed Physics
+      const nodeMap = new Map(graph3D.nodes.map(n => [n.id, n]));
+      for (let step = 0; step < 90; step++) {
+        // 3D Coulomb repulsion
+        for (let i = 0; i < graph3D.nodes.length; i++) {
+          for (let j = i + 1; j < graph3D.nodes.length; j++) {
+            const a = graph3D.nodes[i];
+            const b = graph3D.nodes[j];
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const dz = b.z - a.z;
+            const d2 = dx * dx + dy * dy + dz * dz + 4;
+            if (d2 < 32000) {
+              const f = 950 / d2;
+              a.vx -= dx * f; a.vy -= dy * f; a.vz -= dz * f;
+              b.vx += dx * f; b.vy += dy * f; b.vz += dz * f;
+            }
           }
+        }
+        // 3D Hooke spring attraction along edges
+        for (const e of graph3D.edges) {
+          const s = nodeMap.get(e.source);
+          const t = nodeMap.get(e.target);
+          if (!s || !t) continue;
+          const dx = t.x - s.x;
+          const dy = t.y - s.y;
+          const dz = t.z - s.z;
+          const dist = Math.sqrt(dx * dx + dy * dz + dy * dy) || 1;
+          const rest = e.type === "DEFINES" ? 58 : 115;
+          const f = (dist - rest) * 0.025;
+          const fx = (dx / dist) * f;
+          const fy = (dy / dist) * f;
+          const fz = (dz / dist) * f;
+          s.vx += fx; s.vy += fy; s.vz += fz;
+          t.vx -= fx; t.vy -= fy; t.vz -= fz;
+        }
+        // Centering gravity + damping
+        for (const n of graph3D.nodes) {
+          n.vx = (n.vx - n.x * 0.012) * 0.76;
+          n.vy = (n.vy - n.y * 0.012) * 0.76;
+          n.vz = (n.vz - n.z * 0.012) * 0.76;
+          n.x += n.vx; n.y += n.vy; n.z += n.vz;
         }
       }
 
-      // Spring attraction along edges
-      for (const e of graphState.edges) {
-        const s = nodeMap.get(e.source);
-        const t = nodeMap.get(e.target);
-        if (!s || !t) continue;
-        const dx = t.x - s.x;
-        const dy = t.y - s.y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const targetLen = e.type === "DEFINES" ? 55 : 85;
-        const force = (dist - targetLen) * 0.018;
-        const fx = (dx / dist) * force;
-        const fy = (dy / dist) * force;
-        s.vx += fx;
-        s.vy += fy;
-        t.vx -= fx;
-        t.vy -= fy;
+      if (graph3D.nodes.length > 0 && !graph3D.selectedNode) {
+        const topHub = (graphData.top_hubs && graphData.top_hubs[0])
+          ? graph3D.nodes.find(n => n.id === graphData.top_hubs[0].id)
+          : graph3D.nodes[0];
+        select3DNode(topHub || graph3D.nodes[0]);
       }
 
-      // Center gravity + bounds
-      for (const n of nodes) {
-        if (n === graphState.draggingNode) continue;
-        n.vx += (W / 2 - n.x) * 0.008;
-        n.vy += (H / 2 - n.y) * 0.008;
-        n.vx *= 0.78;
-        n.vy *= 0.78;
-        n.x = Math.max(28, Math.min(W - 28, n.x + n.vx));
-        n.y = Math.max(24, Math.min(H - 36, n.y + n.vy));
-      }
+      drawHubsChart(graphData.top_hubs || []);
     }
 
-    function drawProjectGraph() {
+    function project3DPoint(x, y, z, cx, cy) {
+      const cosY = Math.cos(graph3D.yaw);
+      const sinY = Math.sin(graph3D.yaw);
+      const cosP = Math.cos(graph3D.pitch);
+      const sinP = Math.sin(graph3D.pitch);
+
+      // Rotate around Y axis (yaw), then X axis (pitch)
+      const x1 = x * cosY - z * sinY;
+      const z1 = z * cosY + x * sinY;
+      const y2 = y * cosP - z1 * sinP;
+      const z2 = z1 * cosP + y * sinP;
+
+      const fov = 560 * graph3D.zoom;
+      const cameraDist = 520;
+      const depth = Math.max(80, cameraDist + z2);
+      const scale = fov / depth;
+
+      return {
+        sx: cx + x1 * scale,
+        sy: cy + y2 * scale,
+        z: z2,
+        scale
+      };
+    }
+
+    function render3DFrame() {
       const canvas = document.getElementById("projectGraphCanvas");
       const ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const W = canvas.width;
+      const H = canvas.height;
+      const cx = W / 2;
+      const cy = H / 2;
 
-      const nodeMap = new Map(graphState.nodes.map(n => [n.id, n]));
-      const searchLow = graphState.searchTerm.toLowerCase();
-      const sel = graphState.selectedNode;
+      ctx.clearRect(0, 0, W, H);
+
+      if (graph3D.autoRotate && !graph3D.isDragging) {
+        graph3D.yaw += 0.0045;
+      }
+      graph3D.pulseTick = (graph3D.pulseTick + 0.012) % 1;
+
+      // Draw 3D equatorial reference ring so 3D tilt & rotation are immediately visible
+      ctx.save();
+      ctx.beginPath();
+      const ringRadius = 215;
+      for (let i = 0; i <= 64; i++) {
+        const ang = (i / 64) * Math.PI * 2;
+        const p = project3DPoint(Math.cos(ang) * ringRadius, 0, Math.sin(ang) * ringRadius, cx, cy);
+        if (i === 0) ctx.moveTo(p.sx, p.sy); else ctx.lineTo(p.sx, p.sy);
+      }
+      ctx.strokeStyle = "rgba(56, 189, 248, 0.10)";
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.restore();
+
+      // Project all nodes
+      graph3D.projected.clear();
+      for (const n of graph3D.nodes) {
+        const proj = project3DPoint(n.x, n.y, n.z, cx, cy);
+        graph3D.projected.set(n.id, { ...proj, node: n, r: Math.max(3.5, n.baseRadius * proj.scale) });
+      }
+
+      const sel = graph3D.selectedNode;
       const neighborIds = new Set();
-
       if (sel) {
         neighborIds.add(sel.id);
-        for (const e of graphState.edges) {
+        for (const e of graph3D.edges) {
           if (e.source === sel.id) neighborIds.add(e.target);
           if (e.target === sel.id) neighborIds.add(e.source);
         }
       }
 
-      // Draw edges
-      for (const e of graphState.edges) {
-        if (graphState.edgeFilter !== "ALL") {
-          if (graphState.edgeFilter === "CALLS" && e.type !== "CALLS" && e.type !== "INHERITS") continue;
-          if (graphState.edgeFilter === "DEFINES" && e.type !== "DEFINES") continue;
-          if (graphState.edgeFilter === "IMPORTS" && e.type !== "IMPORTS") continue;
+      // Draw 3D edges
+      for (const e of graph3D.edges) {
+        if (graph3D.edgeFilter !== "ALL") {
+          if (graph3D.edgeFilter === "CALLS" && e.type !== "CALLS" && e.type !== "INHERITS") continue;
+          if (graph3D.edgeFilter === "DEFINES" && e.type !== "DEFINES") continue;
+          if (graph3D.edgeFilter === "IMPORTS" && e.type !== "IMPORTS") continue;
         }
-        const s = nodeMap.get(e.source);
-        const t = nodeMap.get(e.target);
-        if (!s || !t) continue;
+        const ps = graph3D.projected.get(e.source);
+        const pt = graph3D.projected.get(e.target);
+        if (!ps || !pt) continue;
 
-        const isHighlighted = sel && (e.source === sel.id || e.target === sel.id);
-        ctx.strokeStyle = isHighlighted
-          ? (e.type === "CALLS" ? "#34d399" : "#38bdf8")
-          : "rgba(142, 160, 192, 0.22)";
-        ctx.lineWidth = isHighlighted ? 2.0 : 1.0;
+        const avgZ = (ps.z + pt.z) / 2;
+        const depthAlpha = Math.max(0.12, Math.min(0.85, 1 - (avgZ + 220) / 520));
+        const isActive = sel && (e.source === sel.id || e.target === sel.id);
 
         ctx.beginPath();
-        ctx.moveTo(s.x, s.y);
-        ctx.lineTo(t.x, t.y);
+        ctx.moveTo(ps.sx, ps.sy);
+        ctx.lineTo(pt.sx, pt.sy);
+        if (isActive) {
+          ctx.strokeStyle = e.type === "CALLS" ? "rgba(52, 211, 153, 0.9)" : "rgba(56, 189, 248, 0.85)";
+          ctx.lineWidth = 2.2;
+        } else {
+          ctx.strokeStyle = e.type === "CALLS"
+            ? `rgba(52, 211, 153, ${depthAlpha * 0.45})`
+            : `rgba(139, 157, 195, ${depthAlpha * 0.28})`;
+          ctx.lineWidth = 1.0;
+        }
         ctx.stroke();
+
+        // Draw animated directional call pulse on CALLS edges
+        if (e.type === "CALLS" && (isActive || graph3D.edgeFilter === "CALLS")) {
+          const t = graph3D.pulseTick;
+          const px = ps.sx + (pt.sx - ps.sx) * t;
+          const py = ps.sy + (pt.sy - ps.sy) * t;
+          ctx.fillStyle = "#34d399";
+          ctx.beginPath();
+          ctx.arc(px, py, isActive ? 3.2 : 2.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
 
-      // Draw nodes
-      for (const n of graphState.nodes) {
+      // Depth-sort nodes back-to-front (largest z is furthest away)
+      const sortedProj = [...graph3D.projected.values()].sort((a, b) => b.z - a.z);
+      const searchLow = graph3D.searchTerm.toLowerCase();
+
+      for (const item of sortedProj) {
+        const n = item.node;
+        const isSelected = sel && sel.id === n.id;
+        const isHovered = graph3D.hoveredNode && graph3D.hoveredNode.id === n.id;
+        const isNeighbor = neighborIds.has(n.id);
         const matchesSearch = searchLow && (
           n.name.toLowerCase().includes(searchLow) ||
           n.file_path.toLowerCase().includes(searchLow)
         );
-        const isSelected = sel && sel.id === n.id;
-        const isDimmed = (sel && !neighborIds.has(n.id)) || (searchLow && !matchesSearch);
+
+        const depthFactor = Math.max(0.28, Math.min(1.0, 1 - (item.z + 240) / 560));
+        const dimmed = (sel && !isNeighbor && !matchesSearch) || (searchLow && !matchesSearch);
+        const alpha = dimmed ? depthFactor * 0.35 : depthFactor;
+
+        const baseColor = KIND_COLORS[n.kind] || "#38bdf8";
 
         ctx.save();
-        ctx.globalAlpha = isDimmed ? 0.32 : 1.0;
-        ctx.fillStyle = KIND_COLORS[n.kind] || "#38bdf8";
+        ctx.globalAlpha = alpha;
+
+        // 3D Outer Glow Halo for selected/hovered/hub nodes
+        if (isSelected || isHovered || matchesSearch || n.kind === "file") {
+          const halo = ctx.createRadialGradient(item.sx, item.sy, item.r * 0.4, item.sx, item.sy, item.r * 2.4);
+          halo.addColorStop(0, baseColor);
+          halo.addColorStop(1, "rgba(0,0,0,0)");
+          ctx.fillStyle = halo;
+          ctx.beginPath();
+          ctx.arc(item.sx, item.sy, item.r * 2.4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // 3D Shaded Sphere with Specular Highlight
+        const grad = ctx.createRadialGradient(
+          item.sx - item.r * 0.35,
+          item.sy - item.r * 0.35,
+          item.r * 0.1,
+          item.sx,
+          item.sy,
+          item.r
+        );
+        grad.addColorStop(0, "#ffffff");
+        grad.addColorStop(0.32, baseColor);
+        grad.addColorStop(1, "#060b16");
+
+        ctx.fillStyle = grad;
         ctx.beginPath();
-        ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+        ctx.arc(item.sx, item.sy, item.r, 0, Math.PI * 2);
         ctx.fill();
 
-        if (isSelected || matchesSearch) {
+        if (isSelected || isHovered || matchesSearch) {
           ctx.strokeStyle = "#ffffff";
-          ctx.lineWidth = 2.5;
+          ctx.lineWidth = 2.0;
           ctx.stroke();
         }
 
-        ctx.fillStyle = "#e6edf7";
-        ctx.font = isSelected ? "bold 11px sans-serif" : "10.5px sans-serif";
-        ctx.fillText(n.name, n.x + n.r + 4, n.y + 3);
+        // Smart Level-of-Detail (LOD) labels: show labels for selected, neighbors, search matches, files, or high-PageRank nodes
+        const showLabel = isSelected || isHovered || isNeighbor || matchesSearch || n.kind === "file" || n.pagerank >= 1.3;
+        if (showLabel) {
+          const fontSize = Math.max(9.5, Math.min(13, 10.5 * item.scale));
+          ctx.font = (isSelected || isHovered) ? `700 ${fontSize}px sans-serif` : `500 ${fontSize}px sans-serif`;
+          const textW = ctx.measureText(n.name).width;
+          const lx = item.sx + item.r + 5;
+          const ly = item.sy + 3;
+
+          ctx.fillStyle = "rgba(7, 11, 18, 0.76)";
+          ctx.fillRect(lx - 3, ly - fontSize, textW + 6, fontSize + 4);
+          ctx.fillStyle = isSelected ? "#38bdf8" : "#eef2ff";
+          ctx.fillText(n.name, lx, ly);
+        }
+
         ctx.restore();
       }
+
+      // Draw 3D Orientation Gizmo in bottom-right corner
+      draw3DGizmo(ctx, W - 48, H - 48);
+      requestAnimationFrame(render3DFrame);
     }
 
-    function selectGraphNode(node) {
-      graphState.selectedNode = node;
+    function draw3DGizmo(ctx, gx, gy) {
+      const axes = [
+        { label: "X", x: 24, y: 0, z: 0, color: "#fb7185" },
+        { label: "Y", x: 0, y: -24, z: 0, color: "#34d399" },
+        { label: "Z", x: 0, y: 0, z: 24, color: "#38bdf8" }
+      ];
+      ctx.save();
+      for (const a of axes) {
+        const cosY = Math.cos(graph3D.yaw), sinY = Math.sin(graph3D.yaw);
+        const cosP = Math.cos(graph3D.pitch), sinP = Math.sin(graph3D.pitch);
+        const x1 = a.x * cosY - a.z * sinY;
+        const z1 = a.z * cosY + a.x * sinY;
+        const y2 = a.y * cosP - z1 * sinP;
+        ctx.strokeStyle = a.color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(gx, gy);
+        ctx.lineTo(gx + x1, gy + y2);
+        ctx.stroke();
+        ctx.fillStyle = a.color;
+        ctx.font = "bold 10px sans-serif";
+        ctx.fillText(a.label, gx + x1 * 1.25 - 3, gy + y2 * 1.25 + 3);
+      }
+      ctx.restore();
+    }
+
+    function select3DNode(node) {
+      graph3D.selectedNode = node;
       const box = document.getElementById("nodeInspector");
       if (!node) return;
 
-      const nodeMap = new Map(graphState.nodes.map(n => [n.id, n]));
+      const nodeMap = new Map(graph3D.nodes.map(n => [n.id, n]));
       const callers = [];
       const callees = [];
-      for (const e of graphState.edges) {
-        if (e.target === node.id && e.type === "CALLS" && nodeMap.has(e.source)) {
-          callers.push(nodeMap.get(e.source).name);
+      for (const e of graph3D.edges) {
+        if (e.target === node.id && (e.type === "CALLS" || e.type === "DEFINES") && nodeMap.has(e.source)) {
+          callers.push(nodeMap.get(e.source));
         }
-        if (e.source === node.id && e.type === "CALLS" && nodeMap.has(e.target)) {
-          callees.push(nodeMap.get(e.target).name);
+        if (e.source === node.id && (e.type === "CALLS" || e.type === "DEFINES") && nodeMap.has(e.target)) {
+          callees.push(nodeMap.get(e.target));
         }
       }
 
+      const callerPills = callers.slice(0, 6).map(
+        c => `<span class="pill" data-nodeid="${c.id}">${c.name}</span>`
+      ).join("") || `<span style="color:var(--muted)">None</span>`;
+
+      const calleePills = callees.slice(0, 6).map(
+        c => `<span class="pill" data-nodeid="${c.id}">${c.name}</span>`
+      ).join("") || `<span style="color:var(--muted)">None</span>`;
+
       box.innerHTML = `
         <div><strong>${node.qualified_name}</strong> <span class="tag">${node.kind}</span></div>
-        <div style="color:var(--muted); margin-top:4px;">Location: <strong>${node.file_path}:L${node.start_line}-L${node.end_line}</strong></div>
-        <div style="color:var(--muted);">PageRank Score: <strong>${node.pagerank}</strong> · In: ${node.in_degree} · Out: ${node.out_degree}</div>
+        <div style="color:var(--muted); margin-top:4px;">File Range: <strong>${node.file_path}:L${node.start_line}-L${node.end_line}</strong></div>
+        <div style="color:var(--muted);">PageRank Centrality: <strong>${node.pagerank}</strong> · In: ${node.in_degree} · Out: ${node.out_degree}</div>
         <code>${node.signature}</code>
-        <div style="margin-top:8px; font-size:0.78rem;">
-          <strong>Callers (${callers.length}):</strong> ${callers.length ? callers.slice(0, 5).join(", ") : "None in slice"}<br/>
-          <strong>Callees (${callees.length}):</strong> ${callees.length ? callees.slice(0, 5).join(", ") : "None in slice"}
+        <div style="margin-top:9px; font-size:0.78rem;">
+          <div><strong>Connected Incoming (${callers.length}):</strong></div>
+          <div class="pill-list">${callerPills}</div>
+          <div style="margin-top:6px;"><strong>Connected Outgoing (${callees.length}):</strong></div>
+          <div class="pill-list">${calleePills}</div>
         </div>
       `;
-      drawProjectGraph();
+
+      box.querySelectorAll(".pill[data-nodeid]").forEach(el => {
+        el.addEventListener("click", () => {
+          const target = nodeMap.get(el.getAttribute("data-nodeid"));
+          if (target) select3DNode(target);
+        });
+      });
+    }
+
+    function setup3DInteractions() {
+      const canvas = document.getElementById("projectGraphCanvas");
+
+      const getCanvasPos = (evt) => {
+        const rect = canvas.getBoundingClientRect();
+        return {
+          x: (evt.clientX - rect.left) * (canvas.width / rect.width),
+          y: (evt.clientY - rect.top) * (canvas.height / rect.height)
+        };
+      };
+
+      const findHitNode = (x, y) => {
+        // Check front-to-back (smallest z first)
+        const frontFirst = [...graph3D.projected.values()].sort((a, b) => a.z - b.z);
+        for (const item of frontFirst) {
+          if (Math.hypot(item.sx - x, item.sy - y) <= item.r + 5) {
+            return item.node;
+          }
+        }
+        return null;
+      };
+
+      canvas.addEventListener("mousedown", (evt) => {
+        graph3D.isDragging = true;
+        graph3D.dragMoved = false;
+        graph3D.lastMouseX = evt.clientX;
+        graph3D.lastMouseY = evt.clientY;
+      });
+
+      window.addEventListener("mousemove", (evt) => {
+        const pos = getCanvasPos(evt);
+        if (!graph3D.isDragging) {
+          graph3D.hoveredNode = findHitNode(pos.x, pos.y);
+          canvas.style.cursor = graph3D.hoveredNode ? "pointer" : "grab";
+          return;
+        }
+        const dx = evt.clientX - graph3D.lastMouseX;
+        const dy = evt.clientY - graph3D.lastMouseY;
+        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+          graph3D.dragMoved = true;
+        }
+        graph3D.yaw += dx * 0.0075;
+        graph3D.pitch = Math.max(-1.35, Math.min(1.35, graph3D.pitch + dy * 0.0075));
+        graph3D.lastMouseX = evt.clientX;
+        graph3D.lastMouseY = evt.clientY;
+      });
+
+      window.addEventListener("mouseup", (evt) => {
+        if (graph3D.isDragging && !graph3D.dragMoved) {
+          const pos = getCanvasPos(evt);
+          const hit = findHitNode(pos.x, pos.y);
+          if (hit) select3DNode(hit);
+        }
+        graph3D.isDragging = false;
+      });
+
+      canvas.addEventListener("wheel", (evt) => {
+        evt.preventDefault();
+        const factor = evt.deltaY < 0 ? 1.1 : 0.9;
+        graph3D.zoom = Math.max(0.45, Math.min(2.8, graph3D.zoom * factor));
+      }, { passive: false });
+
+      document.getElementById("zoomInBtn").addEventListener("click", () => {
+        graph3D.zoom = Math.min(2.8, graph3D.zoom * 1.2);
+      });
+      document.getElementById("zoomOutBtn").addEventListener("click", () => {
+        graph3D.zoom = Math.max(0.45, graph3D.zoom * 0.85);
+      });
+
+      const autoBtn = document.getElementById("autoRotateBtn");
+      autoBtn.addEventListener("click", () => {
+        graph3D.autoRotate = !graph3D.autoRotate;
+        autoBtn.textContent = `Auto-Orbit: ${graph3D.autoRotate ? "ON" : "OFF"}`;
+        autoBtn.classList.toggle("active", graph3D.autoRotate);
+      });
+
+      document.getElementById("resetCameraBtn").addEventListener("click", () => {
+        graph3D.yaw = 0.55;
+        graph3D.pitch = 0.32;
+        graph3D.zoom = 1.0;
+      });
+
+      document.getElementById("graphSearchInput").addEventListener("input", (evt) => {
+        graph3D.searchTerm = evt.target.value.trim();
+        if (graph3D.searchTerm) {
+          const match = graph3D.nodes.find(
+            n => n.name.toLowerCase().includes(graph3D.searchTerm.toLowerCase())
+          );
+          if (match) select3DNode(match);
+        }
+      });
+
+      document.getElementById("edgeFilterSelect").addEventListener("change", (evt) => {
+        graph3D.edgeFilter = evt.target.value;
+      });
     }
 
     function drawHubsChart(hubs) {
       const canvas = document.getElementById("hubsChartCanvas");
       const ctx = canvas.getContext("2d");
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      const top = hubs.slice(0, 6);
+      const top = hubs.slice(0, 7);
       if (!top.length) return;
 
       const maxPr = Math.max(0.1, ...top.map(h => h.pagerank));
@@ -593,103 +971,87 @@
       top.forEach((h, i) => {
         const y = i * rowH;
         const bw = (h.pagerank / maxPr) * 145;
-        ctx.fillStyle = "#e6edf7";
+        ctx.fillStyle = "#eef2ff";
         ctx.font = "11px sans-serif";
-        ctx.fillText(h.name.slice(0, 16), 4, y + rowH * 0.65);
+        ctx.fillText(h.name.slice(0, 18), 4, y + rowH * 0.65);
 
         ctx.fillStyle = KIND_COLORS[h.kind] || "#38bdf8";
-        ctx.fillRect(112, y + 6, Math.max(6, bw), rowH - 11);
+        ctx.fillRect(122, y + 6, Math.max(6, bw), rowH - 11);
 
-        ctx.fillStyle = "#8ea0c0";
-        ctx.fillText(h.pagerank.toFixed(1), 118 + bw, y + rowH * 0.65);
+        ctx.fillStyle = "#8b9dc3";
+        ctx.fillText(h.pagerank.toFixed(1), 128 + bw, y + rowH * 0.65);
       });
     }
 
-    function setupGraphInteractions() {
-      const canvas = document.getElementById("projectGraphCanvas");
-      const getCoords = (evt) => {
-        const rect = canvas.getBoundingClientRect();
-        const scaleX = canvas.width / rect.width;
-        const scaleY = canvas.height / rect.height;
-        return {
-          x: (evt.clientX - rect.left) * scaleX,
-          y: (evt.clientY - rect.top) * scaleY
-        };
-      };
+    /* ==================== TELEMETRY & CHARTS ==================== */
+    function renderDashboard(data, isDemoMode) {
+      const badge = document.getElementById("modeBadge");
+      if (isDemoMode) {
+        badge.textContent = "● Sample Session Preview (Not Live Data)";
+        badge.className = "mode-badge demo";
+      } else {
+        badge.textContent = "● Live Workspace Telemetry";
+        badge.className = "mode-badge live";
+      }
 
-      canvas.addEventListener("mousedown", (evt) => {
-        const { x, y } = getCoords(evt);
-        const hit = graphState.nodes.find(n => Math.hypot(n.x - x, n.y - y) <= n.r + 5);
-        if (hit) {
-          graphState.draggingNode = hit;
-          selectGraphNode(hit);
-        }
-      });
+      const turnsCount = Number(data.total_turns || 0);
+      const forecastsCount = Number(data.total_forecasts || 0);
+      const guardCount = Number(data.guardrail_events_count || 0);
 
-      window.addEventListener("mousemove", (evt) => {
-        if (!graphState.draggingNode) return;
-        const { x, y } = getCoords(evt);
-        graphState.draggingNode.x = x;
-        graphState.draggingNode.y = y;
-        drawProjectGraph();
-      });
-
-      window.addEventListener("mouseup", () => {
-        graphState.draggingNode = null;
-      });
-
-      document.getElementById("graphSearchInput").addEventListener("input", (evt) => {
-        graphState.searchTerm = evt.target.value.trim();
-        if (graphState.searchTerm) {
-          const match = graphState.nodes.find(
-            n => n.name.toLowerCase().includes(graphState.searchTerm.toLowerCase())
-          );
-          if (match) selectGraphNode(match);
-        }
-        drawProjectGraph();
-      });
-
-      document.getElementById("edgeFilterSelect").addEventListener("change", (evt) => {
-        graphState.edgeFilter = evt.target.value;
-        drawProjectGraph();
-      });
-
-      document.getElementById("resetGraphBtn").addEventListener("click", () => {
-        for (let i = 0; i < 60; i++) stepForceLayout();
-        drawProjectGraph();
-      });
-    }
-
-    function renderDashboard(data) {
       document.getElementById("kpiTokensSaved").textContent = Number(data.net_tokens_saved || 0).toLocaleString();
-      document.getElementById("kpiTokensSub").textContent = `Real: ${Number(data.total_real_tokens || 0).toLocaleString()} vs Baseline: ${Number(data.total_unoptimized_tokens || 0).toLocaleString()}`;
+      document.getElementById("kpiTokensSub").textContent = turnsCount > 0
+        ? `Real: ${Number(data.total_real_tokens || 0).toLocaleString()} vs Baseline: ${Number(data.total_unoptimized_tokens || 0).toLocaleString()}`
+        : `${forecastsCount} forecasts · ${guardCount} guardrail intercepts`;
+
       document.getElementById("kpiCostSaved").textContent = `$${Number(data.net_cost_saved_usd || 0).toFixed(4)}`;
-      document.getElementById("kpiSpentSub").textContent = `Real Spent: $${Number(data.total_real_cost_usd || 0).toFixed(4)} (Forecast: $${Number(data.total_forecast_cost_usd || 0).toFixed(4)})`;
-      document.getElementById("kpiMape").textContent = `${Number(data.recent_mape_pct || data.mape_pct || 0).toFixed(1)}% MAPE`;
-      const delta = Number(data.total_cost_delta_usd || 0);
-      document.getElementById("kpiDeltaSub").textContent = `ΔC: ${delta >= 0 ? "+" : ""}$${delta.toFixed(4)} · Cache Hit: ${Number(data.cache_hit_ratio_pct || 0).toFixed(1)}%`;
+      document.getElementById("kpiSpentSub").textContent = `Real Spent: $${Number(data.total_real_cost_usd || 0).toFixed(4)} · Forecast: $${Number(data.total_forecast_cost_usd || 0).toFixed(4)}`;
+
+      if (turnsCount > 0) {
+        document.getElementById("kpiMape").textContent = `${Number(data.recent_mape_pct || data.mape_pct || 0).toFixed(1)}% MAPE`;
+        const delta = Number(data.total_cost_delta_usd || 0);
+        document.getElementById("kpiDeltaSub").textContent = `ΔC: ${delta >= 0 ? "+" : ""}$${delta.toFixed(4)} · Cache Hit: ${Number(data.cache_hit_ratio_pct || 0).toFixed(1)}%`;
+      } else {
+        document.getElementById("kpiMape").textContent = "0 turns";
+        document.getElementById("kpiDeltaSub").textContent = "Run a prompt to reconcile Forecast vs. Real $";
+      }
+
       document.getElementById("kpiReduction").textContent = `${Number(data.avg_reduction_pct || 0).toFixed(1)}%`;
-      document.getElementById("kpiTurnsSub").textContent = `Across ${data.total_turns || 0} reconciled turns`;
+      document.getElementById("kpiTurnsSub").textContent = `Across ${turnsCount} reconciled turns`;
 
       drawCostVarianceChart(data.turns || []);
       drawTokensTimelineChart(data.turns || []);
       drawPhaseBreakdownChart(data.phase_breakdown || {});
       drawModelCostChart(data.model_breakdown || {});
-      renderAuditTable(data.turns || []);
+      renderAuditTable(data.turns || [], data.forecasts || []);
+    }
+
+    function drawEmptyCanvasNotice(canvas, message) {
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = "#1e2c47";
+      ctx.strokeRect(16, 16, canvas.width - 32, canvas.height - 32);
+      ctx.fillStyle = "#8b9dc3";
+      ctx.font = "12.5px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(message, canvas.width / 2, canvas.height / 2);
+      ctx.textAlign = "left";
     }
 
     function drawCostVarianceChart(turns) {
       const canvas = document.getElementById("costVarianceCanvas");
+      if (!turns.length) {
+        drawEmptyCanvasNotice(canvas, "No reconciled turns yet — run a prompt in this workspace to chart Forecast vs. Real $.");
+        return;
+      }
       const ctx = canvas.getContext("2d");
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (!turns.length) return;
 
-      const pad = { l: 52, r: 20, t: 20, b: 32 };
+      const pad = { l: 52, r: 20, t: 22, b: 30 };
       const w = canvas.width - pad.l - pad.r;
       const h = canvas.height - pad.t - pad.b;
       const maxCost = Math.max(0.001, ...turns.map(t => Math.max(t.forecast_cost_usd, t.real_cost_usd) * 1.15));
 
-      ctx.strokeStyle = "#23304d";
+      ctx.strokeStyle = "#1e2c47";
       ctx.beginPath();
       ctx.moveTo(pad.l, pad.t);
       ctx.lineTo(pad.l, pad.t + h);
@@ -730,18 +1092,21 @@
       });
       ctx.stroke();
 
-      ctx.fillStyle = "#8ea0c0";
+      ctx.fillStyle = "#8b9dc3";
       ctx.font = "11px sans-serif";
       ctx.fillText("Blue: Forecasted $   Green: Real Billed $   Bars: Residual Error (ΔC)", pad.l + 8, pad.t + 12);
     }
 
     function drawTokensTimelineChart(turns) {
       const canvas = document.getElementById("tokensTimelineCanvas");
+      if (!turns.length) {
+        drawEmptyCanvasNotice(canvas, "No turns recorded yet — token savings bars appear after your first turn completes.");
+        return;
+      }
       const ctx = canvas.getContext("2d");
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (!turns.length) return;
 
-      const pad = { l: 52, r: 20, t: 20, b: 32 };
+      const pad = { l: 52, r: 20, t: 22, b: 30 };
       const w = canvas.width - pad.l - pad.r;
       const h = canvas.height - pad.t - pad.b;
       const maxTok = Math.max(100, ...turns.map(t => t.unoptimized_baseline_tokens * 1.1));
@@ -760,13 +1125,18 @@
         ctx.fillRect(xBase + bw + 4, pad.t + h - hReal, bw, hReal);
       });
 
-      ctx.fillStyle = "#8ea0c0";
+      ctx.fillStyle = "#8b9dc3";
       ctx.font = "11px sans-serif";
       ctx.fillText("Red: Unoptimized Baseline Tokens   Green: Real TokWiz Workflow Tokens", pad.l + 8, pad.t + 12);
     }
 
     function drawPhaseBreakdownChart(phases) {
       const canvas = document.getElementById("phaseBreakdownCanvas");
+      const total = Object.values(phases).reduce((acc, v) => acc + Number(v || 0), 0);
+      if (total === 0) {
+        drawEmptyCanvasNotice(canvas, "Waiting for live turn telemetry to break down Context, Graph, Tool, and Output tokens.");
+        return;
+      }
       const ctx = canvas.getContext("2d");
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -778,31 +1148,34 @@
         ["Model Output", phases.output || 0, "#fb7185"]
       ];
       const maxVal = Math.max(1, ...entries.map(e => e[1]));
-      const pad = { l: 110, r: 60, t: 18, b: 18 };
+      const pad = { l: 110, r: 65, t: 18, b: 18 };
       const w = canvas.width - pad.l - pad.r;
       const rowH = (canvas.height - pad.t - pad.b) / entries.length;
 
       entries.forEach(([label, val, color], idx) => {
         const y = pad.t + idx * rowH;
         const bw = (val / maxVal) * w;
-        ctx.fillStyle = "#e6edf7";
+        ctx.fillStyle = "#eef2ff";
         ctx.font = "12px sans-serif";
         ctx.fillText(label, 12, y + rowH * 0.62);
 
         ctx.fillStyle = color;
         ctx.fillRect(pad.l, y + 6, Math.max(4, bw), rowH - 12);
 
-        ctx.fillStyle = "#8ea0c0";
+        ctx.fillStyle = "#8b9dc3";
         ctx.fillText(Number(val).toLocaleString(), pad.l + bw + 8, y + rowH * 0.62);
       });
     }
 
     function drawModelCostChart(models) {
       const canvas = document.getElementById("modelCostCanvas");
+      const keys = Object.keys(models);
+      if (!keys.length) {
+        drawEmptyCanvasNotice(canvas, "No model billing records yet in this workspace.");
+        return;
+      }
       const ctx = canvas.getContext("2d");
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      const keys = Object.keys(models);
-      if (!keys.length) return;
 
       const pad = { l: 130, r: 50, t: 24, b: 20 };
       const w = canvas.width - pad.l - pad.r;
@@ -812,7 +1185,7 @@
       keys.forEach((k, idx) => {
         const m = models[k];
         const y = pad.t + idx * rowH;
-        ctx.fillStyle = "#e6edf7";
+        ctx.fillStyle = "#eef2ff";
         ctx.font = "12px sans-serif";
         ctx.fillText(k, 12, y + rowH * 0.55);
 
@@ -826,14 +1199,23 @@
         ctx.fillRect(pad.l, y + 8 + (rowH - 16) / 2, Math.max(4, wSaved), (rowH - 16) / 2);
       });
 
-      ctx.fillStyle = "#8ea0c0";
+      ctx.fillStyle = "#8b9dc3";
       ctx.font = "11px sans-serif";
       ctx.fillText("Blue: Real Billed $   Green: Net Saved $", pad.l, 14);
     }
 
-    function renderAuditTable(turns) {
+    function renderAuditTable(turns, forecasts) {
       const tbody = document.getElementById("auditTableBody");
       tbody.replaceChildren();
+
+      if (turns.length === 0 && forecasts.length === 0) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td colspan="11" class="empty-state">No prompts recorded yet in <code>.tokwiz/telemetry.db</code>. Run <code>tokwiz predict "..."</code> or send a prompt in your AI agent to see real-time telemetry here.</td>`;
+        tbody.appendChild(tr);
+        return;
+      }
+
+      // Show reconciled turns
       turns.slice().reverse().forEach(t => {
         const tr = document.createElement("tr");
         const tags = (t.variance_tags || ["ON_TARGET"]).map(tag => `<span class="tag ${tag}">${tag}</span>`).join("");
@@ -853,9 +1235,33 @@
         `;
         tbody.appendChild(tr);
       });
+
+      // Also show pending forecasts if no turns reconciled yet
+      if (turns.length === 0 && forecasts.length > 0) {
+        forecasts.slice().reverse().forEach(f => {
+          const tr = document.createElement("tr");
+          const cCost = (f.costs && f.costs["claude-sonnet-4"]) ? f.costs["claude-sonnet-4"].cached_cost_usd : 0;
+          tr.innerHTML = `
+            <td><code>${f.forecast_id}</code></td>
+            <td>${f.prompt}</td>
+            <td>P-${f.profile_code} (L${f.optimization_level})</td>
+            <td>${Number(f.total_tokens).toLocaleString()}</td>
+            <td>—</td>
+            <td style="color: var(--emerald);">~${Number(f.savings_tokens || 0).toLocaleString()} est.</td>
+            <td>$${Number(cCost).toFixed(4)}</td>
+            <td>—</td>
+            <td>—</td>
+            <td>—</td>
+            <td><span class="tag PENDING_FORECAST">FORECASTED (AWAITING TURN END)</span></td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
     }
 
     async function loadLiveStats() {
+      document.getElementById("liveBtn").classList.add("active");
+      document.getElementById("demoBtn").classList.remove("active");
       try {
         const [statsRes, graphRes] = await Promise.all([
           fetch("/api/stats"),
@@ -864,22 +1270,26 @@
         const statsData = await statsRes.json();
         const graphData = await graphRes.json();
 
-        if (statsData && statsData.total_turns > 0) {
-          renderDashboard(statsData);
-        } else {
-          renderDashboard(SAMPLE_DATA);
-        }
+        // Always render real workspace telemetry (never auto-populate fake sample data!)
+        renderDashboard(statsData, false);
         if (graphData && graphData.nodes) {
-          initGraphSimulation(graphData);
+          init3DGraph(graphData);
         }
       } catch (_err) {
-        renderDashboard(SAMPLE_DATA);
+        renderDashboard({ total_turns: 0, turns: [], forecasts: [] }, false);
       }
     }
 
-    setupGraphInteractions();
-    document.getElementById("refreshBtn").addEventListener("click", loadLiveStats);
-    document.getElementById("demoBtn").addEventListener("click", () => renderDashboard(SAMPLE_DATA));
+    setup3DInteractions();
+    requestAnimationFrame(render3DFrame);
+
+    document.getElementById("liveBtn").addEventListener("click", loadLiveStats);
+    document.getElementById("demoBtn").addEventListener("click", () => {
+      document.getElementById("demoBtn").classList.add("active");
+      document.getElementById("liveBtn").classList.remove("active");
+      renderDashboard(SAMPLE_DATA, true);
+    });
+
     loadLiveStats();
   </script>
 </body>

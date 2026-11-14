@@ -82,22 +82,51 @@ def _populate_sample_repo(target: Path) -> None:
         encoding="utf-8",
     )
 
-    # Create a >320 line file to test TokWiz >300-line AST skeleton interception
+    # Create a >320 line file with realistic multi-class / multi-method call topology
+    order_modules = [
+        ("OrderValidator", "validate_line_items", "sanitize_currency"),
+        ("TaxEngine", "compute_vat", "lookup_jurisdiction_rate"),
+        ("DiscountCalculator", "evaluate_promo_tier", "clamp_discount"),
+        ("ShippingEstimator", "quote_carrier_rate", "calculate_dimensional_weight"),
+        ("FraudScreener", "score_transaction_risk", "check_velocity_limits"),
+        ("LedgerRecorder", "commit_journal_entry", "format_audit_trail"),
+    ]
     order_lines = [
-        '"""Large order calculation engine (>320 lines for AST Skeletonizer testing)."""\n\n',
+        '"""Enterprise order calculation engine (>320 lines for AST Skeletonizer testing)."""\n\n',
         "def apply_regional_tax(amount: float, rate: float = 0.08) -> float:\n",
+        '    """Apply regional tax rate and round to two decimals."""\n',
         "    return round(amount * (1.0 + rate), 2)\n\n",
         "def calculate_order_total(subtotal: float) -> float:\n",
+        '    """Main entry point called by checkout route."""\n',
         "    if subtotal <= 0:\n",
         "        return 0.0\n",
-        "    return apply_regional_tax(subtotal, 0.08)\n\n",
+        "    validator = OrderValidator()\n",
+        "    if not validator.validate_line_items(subtotal):\n",
+        "        return 0.0\n",
+        "    disc = DiscountCalculator().evaluate_promo_tier(subtotal)\n",
+        "    taxed = apply_regional_tax(subtotal - disc, 0.08)\n",
+        "    LedgerRecorder().commit_journal_entry(taxed)\n",
+        "    return taxed\n\n",
     ]
-    for i in range(1, 70):
+    for cls_name, primary_m, helper_m in order_modules:
         order_lines.append(
-            f"def pricing_rule_{i}(base_amount: float) -> float:\n"
-            f'    """Synthetic pricing rule #{i}."""\n'
-            f"    discount = {i} * 0.05\n"
-            f"    return max(0.0, round(base_amount - discount, 2))\n\n"
+            f"class {cls_name}:\n"
+            f'    """Domain component for {cls_name} processing."""\n\n'
+            f"    def {helper_m}(self, value: float) -> float:\n"
+            f'        """Helper calculation for {cls_name}."""\n'
+            f"        adjusted = float(value)\n"
+            f"        if adjusted < 0:\n"
+            f"            adjusted = 0.0\n"
+            f"        # Multi-step validation padding to exceed 300-line file threshold\n"
+            + "".join(f"        step_{k} = adjusted * 1.0\n" for k in range(1, 20))
+            + "        return round(step_19, 2)\n\n"
+            f"    def {primary_m}(self, amount: float) -> float:\n"
+            f'        """Primary operation for {cls_name}."""\n'
+            f"        base = self.{helper_m}(amount)\n"
+            + "".join(f"        check_{k} = base + {k} * 0.0\n" for k in range(1, 20))
+            + "        return round(check_19 * 0.0, 2) if 'discount' in '"
+            + primary_m
+            + "' else round(check_19, 2)\n\n"
         )
     (target / "src" / "services" / "order_engine.py").write_text(
         "".join(order_lines), encoding="utf-8"

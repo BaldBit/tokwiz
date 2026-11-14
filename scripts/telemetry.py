@@ -160,14 +160,39 @@ class TelemetryStore:
             except Exception:
                 t["variance_tags"] = [str(t["variance_tags"])]
 
+        # Also read real pre-prompt forecasts (.tokwiz/forecasts.jsonl) and guardrail events
+        forecasts_list: List[Dict[str, object]] = []
+        forecasts_path = self.root_dir / ".tokwiz" / "forecasts.jsonl"
+        if forecasts_path.exists():
+            for line in forecasts_path.read_text(encoding="utf-8", errors="replace").splitlines():
+                if line.strip():
+                    try:
+                        forecasts_list.append(json.loads(line))
+                    except Exception:
+                        pass
+
+        guardrail_list: List[Dict[str, object]] = []
+        guardrail_path = self.root_dir / ".tokwiz" / "guardrail-events.jsonl"
+        if guardrail_path.exists():
+            for line in guardrail_path.read_text(encoding="utf-8", errors="replace").splitlines():
+                if line.strip():
+                    try:
+                        guardrail_list.append(json.loads(line))
+                    except Exception:
+                        pass
+        guardrail_saved_tokens = sum(int(g.get("tokens_saved", 0)) for g in guardrail_list)
+
         total_turns = len(turns)
         if total_turns == 0:
             return {
                 "total_turns": 0,
-                "total_forecast_tokens": 0,
+                "total_forecasts": len(forecasts_list),
+                "guardrail_events_count": len(guardrail_list),
+                "guardrail_tokens_saved": guardrail_saved_tokens,
+                "total_forecast_tokens": sum(int(f.get("total_tokens", 0)) for f in forecasts_list),
                 "total_real_tokens": 0,
-                "total_unoptimized_tokens": 0,
-                "net_tokens_saved": 0,
+                "total_unoptimized_tokens": sum(int(f.get("unoptimized_tokens", 0)) for f in forecasts_list),
+                "net_tokens_saved": guardrail_saved_tokens,
                 "avg_reduction_pct": 0.0,
                 "total_forecast_cost_usd": 0.0,
                 "total_real_cost_usd": 0.0,
@@ -188,6 +213,8 @@ class TelemetryStore:
                 "level_distribution": {"1": 0, "2": 0, "3": 0},
                 "model_breakdown": {},
                 "turns": [],
+                "forecasts": forecasts_list[-limit:],
+                "guardrail_events": guardrail_list[-limit:],
             }
 
         tot_f_tok = sum(int(t["forecast_total_tokens"]) for t in turns)
@@ -239,10 +266,13 @@ class TelemetryStore:
 
         return {
             "total_turns": total_turns,
+            "total_forecasts": len(forecasts_list),
+            "guardrail_events_count": len(guardrail_list),
+            "guardrail_tokens_saved": guardrail_saved_tokens,
             "total_forecast_tokens": tot_f_tok,
             "total_real_tokens": tot_r_tok,
             "total_unoptimized_tokens": tot_u_tok,
-            "net_tokens_saved": tot_saved_tok,
+            "net_tokens_saved": tot_saved_tok + guardrail_saved_tokens,
             "avg_reduction_pct": round(avg_red_pct, 1),
             "total_forecast_cost_usd": round(tot_f_cost, 6),
             "total_real_cost_usd": round(tot_r_cost, 6),
@@ -257,6 +287,8 @@ class TelemetryStore:
             "level_distribution": level_dist,
             "model_breakdown": model_stats,
             "turns": turns[-limit:],
+            "forecasts": forecasts_list[-limit:],
+            "guardrail_events": guardrail_list[-limit:],
         }
 
 
