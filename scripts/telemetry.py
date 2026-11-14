@@ -88,16 +88,37 @@ class TelemetryStore:
                     token_delta INTEGER NOT NULL,
                     cost_delta_usd REAL NOT NULL,
                     ape_pct REAL NOT NULL,
-                    variance_tags TEXT NOT NULL
+                    variance_tags TEXT NOT NULL,
+                    telemetry_source TEXT NOT NULL DEFAULT 'API_EXACT',
+                    transcript_path TEXT NOT NULL DEFAULT '',
+                    receipts_json TEXT NOT NULL DEFAULT '[]',
+                    ab_baseline_tokens INTEGER NOT NULL DEFAULT 0,
+                    ab_baseline_steps INTEGER NOT NULL DEFAULT 0,
+                    ab_baseline_cost_usd REAL NOT NULL DEFAULT 0.0
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_turns_ts ON turns(timestamp);
                 """
             )
+            # Safe schema migration for existing telemetry.db files
+            for col_def in (
+                "telemetry_source TEXT NOT NULL DEFAULT 'API_EXACT'",
+                "transcript_path TEXT NOT NULL DEFAULT ''",
+                "receipts_json TEXT NOT NULL DEFAULT '[]'",
+                "ab_baseline_tokens INTEGER NOT NULL DEFAULT 0",
+                "ab_baseline_steps INTEGER NOT NULL DEFAULT 0",
+                "ab_baseline_cost_usd REAL NOT NULL DEFAULT 0.0",
+            ):
+                try:
+                    conn.execute(f"ALTER TABLE turns ADD COLUMN {col_def}")
+                except sqlite3.OperationalError:
+                    pass
 
     def record_turn(self, record: Dict[str, object]) -> None:
         tags = record.get("variance_tags", ["ON_TARGET"])
         tags_str = json.dumps(tags) if isinstance(tags, list) else str(tags)
+        receipts = record.get("receipts", [])
+        receipts_str = json.dumps(receipts) if isinstance(receipts, list) else str(receipts or "[]")
         with self._connect() as conn:
             conn.execute(
                 """
@@ -111,7 +132,9 @@ class TelemetryStore:
                     forecast_total_tokens, real_total_tokens,
                     unoptimized_baseline_tokens, skill_overhead_tokens, net_tokens_saved,
                     forecast_cost_usd, real_cost_usd, unoptimized_cost_usd, net_cost_saved_usd,
-                    token_delta, cost_delta_usd, ape_pct, variance_tags
+                    token_delta, cost_delta_usd, ape_pct, variance_tags,
+                    telemetry_source, transcript_path, receipts_json,
+                    ab_baseline_tokens, ab_baseline_steps, ab_baseline_cost_usd
                 ) VALUES (
                     ?, ?, ?, ?, ?,
                     ?, ?, ?, ?,
@@ -122,7 +145,9 @@ class TelemetryStore:
                     ?, ?,
                     ?, ?, ?,
                     ?, ?, ?, ?,
-                    ?, ?, ?, ?
+                    ?, ?, ?, ?,
+                    ?, ?, ?,
+                    ?, ?, ?
                 )
                 """,
                 (
@@ -157,21 +182,52 @@ class TelemetryStore:
                     float(record.get("cost_delta_usd", 0.0)),
                     float(record.get("ape_pct", 0.0)),
                     tags_str,
+                    str(record.get("telemetry_source", "API_EXACT")),
+                    str(record.get("transcript_path", "")),
+                    receipts_str,
+                    int(record.get("ab_baseline_tokens", 0)),
+                    int(record.get("ab_baseline_steps", 0)),
+                    float(record.get("ab_baseline_cost_usd", 0.0)),
                 ),
+            )
+
+    def update_ab_baseline(
+        self,
+        forecast_id: str,
+        ab_baseline_tokens: int,
+        ab_baseline_steps: int,
+        ab_baseline_cost_usd: float,
+    ) -> None:
+        """Attach paired A/B baseline metrics without mutating reconciled turn status or forecast numbers."""
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE turns
+                SET ab_baseline_tokens = ?, ab_baseline_steps = ?, ab_baseline_cost_usd = ?
+                WHERE forecast_id = ?
+                """,
+                (int(ab_baseline_tokens), int(ab_baseline_steps), float(ab_baseline_cost_usd), str(forecast_id)),
             )
 
     def get_summary(self, days: Optional[int] = None, limit: int = 50) -> Dict[str, object]:
         # Automatically sync any completed real Antigravity transcript turns for this workspace
+        ab_comparison: Optional[Dict[str, object]] = None
         try:
             import importlib.util
 
             hook_path = Path(__file__).resolve().parent.parent / "hooks" / "post-turn-record.py"
-            if hook_path.exists() and (self.root_dir / ".tokwiz" / "forecasts.jsonl").exists():
+            if hook_path.exists() and (self.root_dir / ".tokwiz").exists():
                 spec = importlib.util.spec_from_file_location("post_turn_sync", hook_path)
                 if spec and spec.loader:
                     mod = importlib.util.module_from_spec(spec)
                     spec.loader.exec_module(mod)
                     mod.sync_workspace_transcript_turns(self.root_dir)
+                    sibling_base = self.root_dir.parent / "project-baseline"
+                    if sibling_base != self.root_dir and sibling_base.exists():
+                        ab_comparison = mod.build_ab_comparison_report(
+                            baseline_root=sibling_base,
+                            tokwiz_root=self.root_dir,
+                        )
         except Exception:
             pass
 
@@ -188,6 +244,10 @@ class TelemetryStore:
                 t["variance_tags"] = json.loads(str(t["variance_tags"]))
             except Exception:
                 t["variance_tags"] = [str(t["variance_tags"])]
+            try:
+                t["receipts"] = json.loads(str(t.get("receipts_json") or "[]"))
+            except Exception:
+                t["receipts"] = []
 
         # Also read real pre-prompt forecasts (.tokwiz/forecasts.jsonl) and guardrail events
         forecasts_list: List[Dict[str, object]] = []
@@ -274,6 +334,7 @@ class TelemetryStore:
                 "turns": [],
                 "forecasts": forecasts_list[-limit:],
                 "guardrail_events": guardrail_list[-limit:],
+                "ab_comparison": ab_comparison,
             }
 
         tot_f_tok = sum(int(t["forecast_total_tokens"]) for t in turns)
@@ -294,7 +355,7 @@ class TelemetryStore:
         tot_in = sum(int(t["real_input_tokens"]) for t in turns)
         tot_cached = sum(int(t["real_cached_input_tokens"]) for t in turns)
         cache_ratio = (tot_cached / max(1, tot_in)) * 100.0
-        avg_red_pct = (tot_saved_tok / max(1, tot_u_tok)) * 100.0
+        avg_red_pct = (tot_saved_tok / max(1, tot_r_tok + tot_saved_tok)) * 100.0
 
         variance_counts: Dict[str, int] = {}
         level_dist: Dict[str, int] = {"1": 0, "2": 0, "3": 0}
@@ -348,6 +409,7 @@ class TelemetryStore:
             "turns": turns[-limit:],
             "forecasts": forecasts_list[-limit:],
             "guardrail_events": guardrail_list[-limit:],
+            "ab_comparison": ab_comparison,
         }
 
 

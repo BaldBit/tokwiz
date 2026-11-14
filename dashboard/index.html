@@ -344,6 +344,76 @@
       background: rgba(251, 191, 36, 0.16);
       color: var(--amber);
     }
+    .source-badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 6px;
+      font-size: 0.68rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      background: rgba(56, 189, 248, 0.14);
+      color: var(--accent);
+      border: 1px solid rgba(56, 189, 248, 0.28);
+    }
+    .source-badge.TRANSCRIPT_MEASURED {
+      background: rgba(52, 211, 153, 0.14);
+      color: var(--emerald);
+      border-color: rgba(52, 211, 153, 0.3);
+    }
+    .receipt-btn {
+      margin-left: 7px;
+      padding: 2px 8px;
+      font-size: 0.71rem;
+      border-radius: 6px;
+      border: 1px solid rgba(52, 211, 153, 0.35);
+      background: rgba(52, 211, 153, 0.1);
+      color: var(--emerald);
+      cursor: pointer;
+    }
+    .receipt-btn:hover { background: rgba(52, 211, 153, 0.22); }
+    .receipt-drawer-row td {
+      background: #070b14;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    .receipt-list {
+      display: grid;
+      gap: 7px;
+      font-size: 0.79rem;
+    }
+    .receipt-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 7px 11px;
+      border-radius: 8px;
+      background: rgba(17, 25, 43, 0.85);
+      border: 1px solid var(--border);
+    }
+    .receipt-type {
+      font-size: 0.69rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(167, 139, 250, 0.16);
+      color: var(--violet);
+      margin-right: 8px;
+    }
+    .ab-proof-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-bottom: 12px;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+    .ab-proof-meta code {
+      color: var(--accent);
+      background: #060a12;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
   </style>
 </head>
 <body>
@@ -500,6 +570,28 @@
     </div>
   </section>
 
+  <section class="table-card" id="abProofSection" aria-label="Head-to-Head A/B Benchmark Proof" style="display: none; margin-bottom: 22px;">
+    <h2>🔬 Head-to-Head A/B Transcript Verification (Baseline vs. TokWiz)</h2>
+    <div class="ab-proof-meta" id="abProofMeta"></div>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Prompt</th>
+          <th>Baseline Steps</th>
+          <th>TokWiz Steps</th>
+          <th>Baseline Real Tok</th>
+          <th>TokWiz Real Tok</th>
+          <th>A/B Net Saved Tok</th>
+          <th>Reduction %</th>
+          <th>Baseline $</th>
+          <th>TokWiz $</th>
+        </tr>
+      </thead>
+      <tbody id="abProofTableBody"></tbody>
+    </table>
+  </section>
+
   <section class="table-card" aria-label="Live Prompt Audit Log">
     <h2>Prompt Forecast & Cost Reconciliation Audit Log</h2>
     <table>
@@ -508,9 +600,10 @@
           <th>Forecast ID</th>
           <th>Prompt</th>
           <th>Profile</th>
+          <th>Source</th>
           <th>Forecast Tok</th>
           <th>Real Tok</th>
-          <th>Saved Tok</th>
+          <th>Saved Tok (Receipts)</th>
           <th>Forecast $</th>
           <th>Real $</th>
           <th>ΔC ($)</th>
@@ -1610,7 +1703,51 @@
       renderTokensTimelineChart(chartTurns);
       renderPhaseBreakdownChart(data.phase_breakdown || {});
       renderModelCostChart(data.model_breakdown || {});
+      renderAbProofSection(data.ab_comparison || null);
       renderAuditTable(data.turns || [], pendingForecasts);
+    }
+
+    function renderAbProofSection(abData) {
+      const sec = document.getElementById("abProofSection");
+      const meta = document.getElementById("abProofMeta");
+      const tbody = document.getElementById("abProofTableBody");
+      if (!sec || !tbody || !meta) return;
+      tbody.replaceChildren();
+      meta.replaceChildren();
+
+      if (!abData || !Array.isArray(abData.paired_turns) || abData.paired_turns.length === 0) {
+        sec.style.display = "none";
+        return;
+      }
+      sec.style.display = "block";
+      const tot = abData.totals || {};
+      const baseLog = abData.baseline_transcript ? abData.baseline_transcript.split("/").slice(-3).join("/") : "session.jsonl";
+      const twLog = abData.tokwiz_transcript ? abData.tokwiz_transcript.split("/").slice(-3).join("/") : "session.jsonl";
+
+      meta.innerHTML = `
+        <span>Baseline Log: <code title="${abData.baseline_transcript || ""}">${baseLog}</code></span>
+        <span>TokWiz Log: <code title="${abData.tokwiz_transcript || ""}">${twLog}</code></span>
+        <span>Total A/B Reduction: <strong style="color: var(--emerald);">${Number(tot.ab_reduction_pct || 0).toFixed(1)}% (${Number(tot.ab_tokens_saved || 0) >= 0 ? "+" : ""}${Number(tot.ab_tokens_saved || 0).toLocaleString()} tok saved)</strong></span>
+        <span>Total Steps: <strong>${Number(tot.baseline_steps || 0)} (Baseline) vs ${Number(tot.tokwiz_steps || 0)} (TokWiz)</strong></span>
+      `;
+
+      abData.paired_turns.forEach(p => {
+        const tr = document.createElement("tr");
+        const saved = Number(p.ab_tokens_saved || 0);
+        tr.innerHTML = `
+          <td><strong>#${p.turn_number}</strong></td>
+          <td>${p.prompt}</td>
+          <td>${Number(p.baseline_steps)} steps (${Number(p.baseline_full_reads || 0)} full reads)</td>
+          <td>${Number(p.tokwiz_steps)} steps (${Number(p.tokwiz_graph_queries || 0)} graph, ${Number(p.tokwiz_ranged_reads || 0)} ranged)</td>
+          <td>${Number(p.baseline_tokens).toLocaleString()}</td>
+          <td>${Number(p.tokwiz_tokens).toLocaleString()}</td>
+          <td style="color: var(--emerald); font-weight: 700;">${saved >= 0 ? "+" : ""}${saved.toLocaleString()}</td>
+          <td style="color: var(--emerald); font-weight: 600;">${Number(p.ab_reduction_pct).toFixed(1)}%</td>
+          <td>$${Number(p.baseline_cost_usd).toFixed(4)}</td>
+          <td>$${Number(p.tokwiz_cost_usd).toFixed(4)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
     }
 
     function renderAuditTable(turns, pendingForecasts) {
@@ -1619,22 +1756,33 @@
 
       if (turns.length === 0 && pendingForecasts.length === 0) {
         const tr = document.createElement("tr");
-        tr.innerHTML = `<td colspan="11" class="empty-state">No prompts recorded yet in <code>.tokwiz/telemetry.db</code>. Run <code>tokwiz predict "..."</code> or send a prompt in your AI agent to see real-time telemetry here.</td>`;
+        tr.innerHTML = `<td colspan="12" class="empty-state">No prompts recorded yet in <code>.tokwiz/telemetry.db</code>. Send a prompt in your AI agent to see real-time telemetry and itemized receipts here.</td>`;
         tbody.appendChild(tr);
         return;
       }
 
-      turns.slice().reverse().forEach(t => {
+      turns.slice().reverse().forEach((t, idx) => {
         const tr = document.createElement("tr");
         const tags = (t.variance_tags || ["ON_TARGET"]).map(tag => `<span class="tag ${tag}">${tag}</span>`).join("");
         const delta = Number(t.cost_delta_usd || 0);
+        const src = t.telemetry_source || "API_EXACT";
+        const receipts = Array.isArray(t.receipts) ? t.receipts : [];
+        const drawerId = `receiptDrawer_${idx}`;
+        const receiptBtnHtml = receipts.length > 0
+          ? `<button type="button" class="receipt-btn" data-drawer="${drawerId}">🔍 ${receipts.length} receipt${receipts.length > 1 ? "s" : ""}</button>`
+          : "";
+        const abHint = Number(t.ab_baseline_tokens || 0) > 0
+          ? `<div style="font-size: 0.70rem; color: var(--muted); margin-top: 2px;">A/B vs Base: ${(Number(t.ab_baseline_tokens) - Number(t.real_total_tokens) >= 0 ? "+" : "")}${(Number(t.ab_baseline_tokens) - Number(t.real_total_tokens)).toLocaleString()} tok</div>`
+          : "";
+
         tr.innerHTML = `
           <td><code>${t.forecast_id}</code></td>
           <td>${t.prompt}</td>
           <td>P-${t.profile_code} (L${t.optimization_level})</td>
+          <td><span class="source-badge ${src}" title="${t.transcript_path || "Direct provider usage telemetry"}">${src}</span></td>
           <td>${Number(t.forecast_total_tokens).toLocaleString()}</td>
           <td>${Number(t.real_total_tokens).toLocaleString()}</td>
-          <td style="color: var(--emerald); font-weight: 600;">+${Number(t.net_tokens_saved).toLocaleString()}</td>
+          <td style="color: var(--emerald); font-weight: 600;">+${Number(t.net_tokens_saved).toLocaleString()}${receiptBtnHtml}${abHint}</td>
           <td>$${Number(t.forecast_cost_usd).toFixed(4)}</td>
           <td>$${Number(t.real_cost_usd).toFixed(4)}</td>
           <td>${delta >= 0 ? "+" : ""}$${delta.toFixed(4)}</td>
@@ -1642,6 +1790,34 @@
           <td>${tags}</td>
         `;
         tbody.appendChild(tr);
+
+        if (receipts.length > 0) {
+          const drawerTr = document.createElement("tr");
+          drawerTr.id = drawerId;
+          drawerTr.className = "receipt-drawer-row";
+          drawerTr.style.display = "none";
+          const itemsHtml = receipts.map(r => `
+            <div class="receipt-item">
+              <div>
+                <span class="receipt-type">${r.type || "RECEIPT"}</span>
+                <strong>${r.target || ""}</strong> — <span style="color: var(--muted);">${r.detail || ""}</span>
+              </div>
+              <div style="color: var(--emerald); font-weight: 700; white-space: nowrap; margin-left: 14px;">
+                +${Number(r.saved_tokens || 0).toLocaleString()} tok saved
+              </div>
+            </div>
+          `).join("");
+          drawerTr.innerHTML = `<td colspan="12"><div class="receipt-list">${itemsHtml}</div></td>`;
+          tbody.appendChild(drawerTr);
+
+          const btn = tr.querySelector(".receipt-btn");
+          if (btn) {
+            btn.addEventListener("click", () => {
+              const isHidden = drawerTr.style.display === "none";
+              drawerTr.style.display = isHidden ? "table-row" : "none";
+            });
+          }
+        }
       });
 
       if (pendingForecasts.length > 0) {
@@ -1652,6 +1828,7 @@
             <td><code>${f.forecast_id}</code></td>
             <td>${f.prompt}</td>
             <td>P-${f.profile_code} (L${f.optimization_level})</td>
+            <td><span class="source-badge">PENDING</span></td>
             <td>${Number(f.total_tokens).toLocaleString()}</td>
             <td>—</td>
             <td style="color: var(--emerald);">~${Number(f.savings_tokens || 0).toLocaleString()} est.</td>

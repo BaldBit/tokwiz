@@ -278,6 +278,53 @@ def _cmd_budget(argv: List[str]) -> int:
     return 0
 
 
+def _cmd_verify_ab(argv: List[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="tokwiz verify-ab",
+        description="Verify head-to-head A/B token savings and test equivalence from real IDE session transcripts.",
+    )
+    parser.add_argument("--tokwiz", default=None, help="Path to TokWiz workspace (default: current dir or ../tokwiz-ab-demo/project-tokwiz)")
+    parser.add_argument("--baseline", default=None, help="Path to Baseline workspace (default: sibling project-baseline)")
+    parser.add_argument("--no-tests", action="store_true", help="Skip running unittest verification in both workspaces")
+    parser.add_argument("--json", action="store_true", help="Output full JSON verification report")
+    args = parser.parse_args(argv)
+
+    cwd = _ensure_valid_cwd()
+    if args.tokwiz:
+        t_root = _resolve_root(args.tokwiz)
+    elif (cwd / ".tokwiz").exists() and cwd.name == "project-tokwiz":
+        t_root = cwd
+    elif (_REPO_ROOT.parent / "tokwiz-ab-demo" / "project-tokwiz").exists():
+        t_root = (_REPO_ROOT.parent / "tokwiz-ab-demo" / "project-tokwiz").resolve()
+    else:
+        t_root = cwd
+
+    if args.baseline:
+        b_root = _resolve_root(args.baseline)
+    else:
+        b_root = (t_root.parent / "project-baseline").resolve()
+
+    spec = importlib.util.spec_from_file_location(
+        "post_turn_record", _REPO_ROOT / "hooks" / "post-turn-record.py"
+    )
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["post_turn_record"] = mod
+    spec.loader.exec_module(mod)
+
+    mod.sync_workspace_transcript_turns(t_root)
+    report = mod.build_ab_comparison_report(
+        baseline_root=b_root,
+        tokwiz_root=t_root,
+        run_tests=not args.no_tests,
+    )
+    if args.json:
+        print(json.dumps(report, indent=2))
+    else:
+        print(mod.render_ab_comparison_cli(report))
+    return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     _ensure_valid_cwd()
     args_list = list(sys.argv[1:] if argv is None else argv)
@@ -291,6 +338,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             "  skeleton <file>         Extract compact AST signature skeleton with line numbers\n"
             "  filter [-- <cmd>]       Compress noisy test, build, and git shell outputs\n"
             "  stats [--session|--days N]  Display token savings & Forecast-vs-Real cost report\n"
+            "  verify-ab [--json]      Verify head-to-head A/B savings from real IDE transcripts\n"
             "  dashboard [--port 8420] Launch interactive local analytics web dashboard\n"
             "  benchmark [--json]      Run paired A/B token savings & MAPE benchmark suite\n"
             "  level <1|2|3|auto>      Configure optimization level\n"
@@ -316,6 +364,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     if cmd == "stats":
         mod = _load_script_module("telemetry", "telemetry.py")
         return int(mod.main(rest))
+    if cmd == "verify-ab":
+        return _cmd_verify_ab(rest)
     if cmd == "dashboard":
         spec = importlib.util.spec_from_file_location(
             "dashboard_server", _REPO_ROOT / "dashboard" / "server.py"

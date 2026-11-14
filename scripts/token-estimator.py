@@ -238,10 +238,19 @@ class TokenEstimator:
             "refactor", "implement", "feature", "support", "across", "update",
             "integrate", "add", "redesign", "extract", "rename",
         }
-        qa_starters = ("what ", "why ", "how ", "explain ", "describe ", "where is ")
+        qa_starters = (
+            "what ", "why ", "how ", "explain ", "describe ", "where is ",
+            "trace ", "show ", "list ", "which ",
+        )
         edit_terms = {"edit", "change", "modify", "patch", "function", "method", "typo"}
 
         impacted_count = len(graph_slice.impacted_files)
+
+        # Profile A: Direct Q&A / Trace / Explanation (checked first when no write/edit/debug/audit verbs exist)
+        if (p_low.startswith(qa_starters) or p_low.endswith("?")) and not (
+            word_set & (refactor_terms | edit_terms | debug_terms | {"audit", "migrate"})
+        ):
+            return PROFILES["A"]
 
         # Profile D: Debugging / Test Triage
         if word_set & debug_terms and ("test" in word_set or "error" in word_set or "fix" in word_set or "bug" in word_set):
@@ -251,10 +260,6 @@ class TokenEstimator:
         # Profile E: Repo-Wide Exploration / Architecture
         if len(word_set & repo_wide_terms) >= 2 or impacted_count >= 6:
             return PROFILES["E"]
-
-        # Profile A: Direct Q&A / Explanation (when no edit/refactor verbs are present)
-        if (p_low.startswith(qa_starters) or p_low.endswith("?")) and not (word_set & (refactor_terms | edit_terms | debug_terms)):
-            return PROFILES["A"]
 
         # Profile C: Multi-File Feature / Refactor
         if impacted_count >= 2 or ("refactor" in word_set) or ("tests" in word_set and (word_set & refactor_terms)):
@@ -275,9 +280,12 @@ class TokenEstimator:
         graph_slice = self.graph.query(prompt, max_tokens=400, auto_build=True)
         profile = self.classify_prompt(prompt, graph_slice)
 
-        opt_level = forced_level if forced_level in (1, 2, 3) else profile.optimization_level
-        if len(graph_slice.impacted_files) > 2 or context_tokens > 25000:
-            opt_level = max(opt_level, 2)
+        if profile.code == "A":
+            opt_level = forced_level if forced_level in (1, 2, 3) else 1
+        else:
+            opt_level = forced_level if forced_level in (1, 2, 3) else profile.optimization_level
+            if len(graph_slice.impacted_files) > 2 or context_tokens > 25000:
+                opt_level = max(opt_level, 2)
 
         # Apply optional calibration multipliers
         step_mult = float(
@@ -289,18 +297,36 @@ class TokenEstimator:
         reason_mult = float(
             self.calibration.get("reasoning_multipliers", {}).get(profile.code, 1.0)  # type: ignore[union-attr]
         )
-        n_steps = max(profile.min_steps, min(profile.max_steps, round(profile.default_steps * step_mult)))
+        if profile.code == "A" and len(graph_slice.matched_symbols) > 0:
+            base_steps = min(2, max(1, (len(graph_slice.matched_symbols) + 1) // 2))
+            n_steps = max(1, round(base_steps * step_mult))
+        else:
+            n_steps = max(profile.min_steps, min(profile.max_steps, round(profile.default_steps * step_mult)))
 
         prompt_tok = count_tokens(prompt)
         blast_files = max(1, len(graph_slice.impacted_files)) if profile.code != "A" else len(graph_slice.impacted_files)
         blast_lines = graph_slice.total_lines_in_radius or (blast_files * 40)
+
+        # Measure real token sizes of impacted files on disk for graph-grounded estimation
+        actual_full_file_tokens = 0
+        for rel_f in graph_slice.impacted_files:
+            fp = self.root_dir / rel_f
+            if fp.is_file():
+                try:
+                    actual_full_file_tokens += count_tokens(fp.read_text(encoding="utf-8", errors="replace"))
+                except Exception:
+                    actual_full_file_tokens += 400
+            else:
+                actual_full_file_tokens += 400
+
         blast_line_tokens = max(80, blast_lines * 6) if blast_files > 0 else 0
 
-        # Multi-step Workflow Prediction Formula:
+        # Multi-step Workflow Prediction Formula grounded in real symbol/file sizes:
         # Total = T_context + T_prompt + sum_{i=1..N}(T_context,i + T_tool_in,i + T_tool_out,i) + T_reasoning + T_output
         level_compression = {1: 1.0, 2: 0.85, 3: 0.68}[opt_level]
+        max_slice_cap = 160 if profile.code == "A" else 360
         per_step_tool_out = int(
-            (profile.avg_tool_out_tokens + min(400, blast_line_tokens // max(1, n_steps)))
+            (profile.avg_tool_out_tokens + min(max_slice_cap, blast_line_tokens // max(1, n_steps)))
             * level_compression
             * tool_mult
         )
@@ -318,10 +344,14 @@ class TokenEstimator:
 
         total_tokens = context_tokens + prompt_tok + tool_loop_tokens + reasoning_tokens + output_tokens
 
-        # Unoptimized baseline (blind grep/find + full file reads + unfiltered test logs)
+        # Unoptimized baseline grounded in full file reads + blind grep/test loops
         unopt_steps = profile.unoptimized_steps + max(0, blast_files - 1) * 2
+        per_step_unopt_out = max(
+            profile.unoptimized_tool_out_tokens,
+            actual_full_file_tokens // max(1, blast_files) if actual_full_file_tokens > 0 else profile.unoptimized_tool_out_tokens,
+        )
         unopt_loop_tokens = unopt_steps * (
-            context_tokens + prompt_tok + 160 + profile.unoptimized_tool_out_tokens + (blast_files * 350)
+            context_tokens + prompt_tok + 140 + min(2400, per_step_unopt_out) + (blast_files * 180)
         )
         unopt_output = int(profile.base_output_tokens * 1.45)
         unopt_reasoning = int(reasoning_tokens * 1.7)

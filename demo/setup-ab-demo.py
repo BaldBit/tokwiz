@@ -27,6 +27,31 @@ REPO_ROOT = DEMO_DIR.parent
 WORKSPACE_DIR = REPO_ROOT.parent / "tokwiz-ab-demo"
 
 
+def _make_domain_padding(prefix: str, classes: list[tuple[str, str, str]]) -> str:
+    """Generate realistic multi-method domain classes (~55 lines per class) for >320-line modules."""
+    chunks: list[str] = []
+    for cls_name, method_a, method_b in classes:
+        chunks.append(
+            f"class {cls_name}:\n"
+            f'    """Production domain service for {prefix}: {cls_name}."""\n\n'
+            f"    def __init__(self, namespace: str = '{prefix.lower()}') -> None:\n"
+            f"        self.namespace = namespace\n"
+            f"        self.records: dict[str, float] = {{}}\n\n"
+            f"    def {method_a}(self, key: str, metric: float = 1.0) -> float:\n"
+            f'        """Compute normalized metric for {cls_name}.{method_a}."""\n'
+            f"        norm = float(metric) if metric >= 0 else 0.0\n"
+            + "".join(f"        acc_{k} = norm + ({k} * 0.0)\n" for k in range(1, 18))
+            + f"        self.records[key] = round(acc_17, 4)\n"
+            f"        return self.records[key]\n\n"
+            f"    def {method_b}(self, payload: dict) -> dict:\n"
+            f'        """Validate and enrich state for {cls_name}.{method_b}."""\n'
+            f"        out = dict(payload)\n"
+            + "".join(f"        out[' trace_{k}'] = {k}\n" for k in range(1, 14))
+            + f"        return {{k: v for k, v in out.items() if not str(k).startswith(' ')}}\n\n"
+        )
+    return "".join(chunks)
+
+
 def _populate_sample_repo(target: Path) -> None:
     target.mkdir(parents=True, exist_ok=True)
     # Clean contents in-place without unlinking `target` itself so open shells keep a valid CWD inode
@@ -35,61 +60,144 @@ def _populate_sample_repo(target: Path) -> None:
             shutil.rmtree(child)
         else:
             child.unlink()
-    (target / "src" / "crypto").mkdir(parents=True, exist_ok=True)
-    (target / "src" / "auth").mkdir(parents=True, exist_ok=True)
-    (target / "src" / "middleware").mkdir(parents=True, exist_ok=True)
-    (target / "src" / "routes").mkdir(parents=True, exist_ok=True)
-    (target / "src" / "services").mkdir(parents=True, exist_ok=True)
-    (target / "tests").mkdir(parents=True, exist_ok=True)
 
+    pkg_dirs = [
+        target / "src",
+        target / "src" / "crypto",
+        target / "src" / "auth",
+        target / "src" / "middleware",
+        target / "src" / "routes",
+        target / "src" / "services",
+        target / "src" / "models",
+        target / "tests",
+    ]
+    for d in pkg_dirs:
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "__init__.py").write_text('"""Package init."""\n', encoding="utf-8")
+
+    # 1. src/crypto/jwt.py (~330 lines)
+    jwt_top = _make_domain_padding(
+        "Crypto",
+        [
+            ("KeyRingRotator", "rotate_signing_key", "inspect_key_epoch"),
+            ("JwkThumbprintCache", "compute_thumbprint", "evict_expired_keys"),
+            ("NonceReplayGuard", "record_nonce", "verify_nonce_window"),
+        ],
+    )
+    jwt_bottom = _make_domain_padding(
+        "Claims",
+        [
+            ("AudienceValidator", "score_audience_scope", "normalize_issuer_claim"),
+            ("CipherSuiteAuditor", "verify_entropy_bits", "export_audit_digest"),
+        ],
+    )
     (target / "src" / "crypto" / "jwt.py").write_text(
-        '"""Cryptographic signature helper for session tokens."""\n\n'
-        "def verify_signature(raw_token: str) -> bool:\n"
-        '    """Return True when raw_token has a valid signature prefix and length."""\n'
-        '    return raw_token.startswith("tk_") and len(raw_token) >= 12\n\n'
-        "def decode_claims(raw_token: str) -> dict:\n"
-        '    if not verify_signature(raw_token):\n'
-        '        return {"valid": False}\n'
-        '    return {"valid": True, "sub": raw_token[3:9]}\n',
+        '"""Cryptographic signature helper and key rotation service for session tokens."""\n\n'
+        + jwt_top
+        + "def verify_signature(raw_token: str) -> bool:\n"
+        + '    """Return True when raw_token has a valid signature prefix and length."""\n'
+        + '    return raw_token.startswith("tk_") and len(raw_token) >= 12\n\n'
+        + "def decode_claims(raw_token: str) -> dict:\n"
+        + "    if not verify_signature(raw_token):\n"
+        + '        return {"valid": False}\n'
+        + '    return {"valid": True, "sub": raw_token[3:9]}\n\n'
+        + jwt_bottom,
         encoding="utf-8",
     )
 
+    # 2. src/auth/session.py (~340 lines, target symbol `validate_token` in middle of file)
+    session_top = _make_domain_padding(
+        "Session",
+        [
+            ("SessionAuditStore", "record_login_attempt", "summarize_session_drift"),
+            ("TokenRevocationCache", "check_revocation_bloom", "sync_revocation_shard"),
+            ("DeviceFingerprintVerifier", "score_device_trust", "normalize_user_agent"),
+        ],
+    )
+    session_bottom = _make_domain_padding(
+        "SessionLifecycle",
+        [
+            ("RefreshLeaseCoordinator", "extend_refresh_window", "prune_idle_leases"),
+            ("MfaStepUpEvaluator", "compute_assurance_level", "serialize_challenge_state"),
+        ],
+    )
     (target / "src" / "auth" / "session.py").write_text(
-        '"""Session management and token validation."""\n'
+        '"""Enterprise session management, revocation caching, and token validation."""\n'
         "from src.crypto.jwt import decode_claims, verify_signature\n\n"
-        "class SessionManager:\n"
-        "    def validate_token(self, token: str) -> bool:\n"
-        '        """Validate bearer token signature and claims."""\n'
-        "        if not verify_signature(token):\n"
-        "            return False\n"
-        "        claims = decode_claims(token)\n"
-        '        return bool(claims.get("valid"))\n',
+        + session_top
+        + "class SessionManager:\n"
+        + '    """Primary authentication session manager."""\n\n'
+        + "    def validate_token(self, token: str) -> bool:\n"
+        + '        """Validate bearer token signature and claims."""\n'
+        + "        if not verify_signature(token):\n"
+        + "            return False\n"
+        + "        claims = decode_claims(token)\n"
+        + '        return bool(claims.get("valid"))\n\n'
+        + session_bottom,
         encoding="utf-8",
     )
 
+    # 3. src/middleware/require_auth.py (~330 lines, target symbol `require_auth` in middle)
+    mw_top = _make_domain_padding(
+        "Middleware",
+        [
+            ("HeaderSanitizer", "measure_header_entropy", "strip_hop_by_hop_headers"),
+            ("CorsPolicyEnforcer", "evaluate_origin_trust", "inject_preflight_headers"),
+            ("IpRateLimitBucket", "consume_request_quota", "format_rate_limit_state"),
+        ],
+    )
+    mw_bottom = _make_domain_padding(
+        "RequestContext",
+        [
+            ("TraceSpanPropagator", "extract_baggage_weight", "inject_w3c_traceparent"),
+            ("TenantIsolationGuard", "verify_tenant_boundary", "resolve_shard_routing"),
+        ],
+    )
     (target / "src" / "middleware" / "require_auth.py").write_text(
-        '"""HTTP authentication middleware."""\n'
+        '"""HTTP authentication, header sanitization, and request guard middleware."""\n'
         "from src.auth.session import SessionManager\n\n"
-        "def require_auth(auth_header: str) -> bool:\n"
-        "    mgr = SessionManager()\n"
-        "    return mgr.validate_token(auth_header)\n",
+        + mw_top
+        + "def require_auth(auth_header: str) -> bool:\n"
+        + '    """Validate incoming HTTP authorization header via SessionManager."""\n'
+        + "    mgr = SessionManager()\n"
+        + "    return mgr.validate_token(auth_header)\n\n"
+        + mw_bottom,
         encoding="utf-8",
     )
 
+    # 4. src/routes/checkout.py (~330 lines, target symbol `process_checkout` in middle)
+    route_top = _make_domain_padding(
+        "CheckoutRoute",
+        [
+            ("IdempotencyKeyLedger", "acquire_idempotency_lock", "serialize_cached_response"),
+            ("CartSnapshotSerializer", "compute_cart_checksum", "normalize_line_payload"),
+            ("PaymentIntentOrchestrator", "reserve_authorization_hold", "reconcile_gateway_state"),
+        ],
+    )
+    route_bottom = _make_domain_padding(
+        "CheckoutTelemetry",
+        [
+            ("ConversionFunnelTracker", "record_checkout_latency", "emit_funnel_event"),
+            ("ReceiptWebhookTrigger", "schedule_receipt_dispatch", "build_receipt_envelope"),
+        ],
+    )
     (target / "src" / "routes" / "checkout.py").write_text(
-        '"""Checkout route handler."""\n'
+        '"""Checkout route handler, idempotency locking, and payment orchestration."""\n'
         "from src.auth.session import SessionManager\n"
         "from src.services.order_engine import calculate_order_total\n\n"
-        "def process_checkout(token: str, subtotal: float) -> dict:\n"
-        "    mgr = SessionManager()\n"
-        "    if not mgr.validate_token(token):\n"
-        '        return {"status": 401, "error": "Unauthorized"}\n'
-        "    total = calculate_order_total(subtotal)\n"
-        '    return {"status": 200, "total": total}\n',
+        + route_top
+        + "def process_checkout(token: str, subtotal: float) -> dict:\n"
+        + '    """Authenticate caller and calculate final order checkout total."""\n'
+        + "    mgr = SessionManager()\n"
+        + "    if not mgr.validate_token(token):\n"
+        + '        return {"status": 401, "error": "Unauthorized"}\n'
+        + "    total = calculate_order_total(subtotal)\n"
+        + '    return {"status": 200, "total": total}\n\n'
+        + route_bottom,
         encoding="utf-8",
     )
 
-    # Create a >320 line file with realistic multi-class / multi-method call topology
+    # 5. src/services/order_engine.py (~360 lines, target symbols `apply_regional_tax` & `calculate_order_total`)
     order_modules = [
         ("OrderValidator", "validate_line_items", "sanitize_currency"),
         ("TaxEngine", "compute_vat", "lookup_jurisdiction_rate"),
@@ -99,7 +207,7 @@ def _populate_sample_repo(target: Path) -> None:
         ("LedgerRecorder", "commit_journal_entry", "format_audit_trail"),
     ]
     order_lines = [
-        '"""Enterprise order calculation engine (>320 lines for AST Skeletonizer testing)."""\n\n',
+        '"""Enterprise order calculation engine (>350 lines for AST Skeletonizer testing)."""\n\n',
         "def apply_regional_tax(amount: float, rate: float = 0.08) -> float:\n",
         '    """Apply regional tax rate and round to two decimals."""\n',
         "    return round(amount * (1.0 + rate), 2)\n\n",
@@ -124,7 +232,6 @@ def _populate_sample_repo(target: Path) -> None:
             f"        adjusted = float(value)\n"
             f"        if adjusted < 0:\n"
             f"            adjusted = 0.0\n"
-            f"        # Multi-step validation padding to exceed 300-line file threshold\n"
             + "".join(f"        step_{k} = adjusted * 1.0\n" for k in range(1, 20))
             + "        return round(step_19, 2)\n\n"
             f"    def {primary_m}(self, amount: float) -> float:\n"
@@ -139,10 +246,123 @@ def _populate_sample_repo(target: Path) -> None:
         "".join(order_lines), encoding="utf-8"
     )
 
+    # 6. Additional realistic sibling service modules (~260-320 lines each) with lookalike terms
+    # that cause unguided `grep` / `find` agents to scan multiple irrelevant files
+    sibling_specs = [
+        (
+            "src/auth/api_keys.py",
+            "ApiKeyRegistry",
+            "Legacy API key provisioning and rotation registry (note: live bearer & header validation is in SessionManager.validate_token).",
+            [
+                ("ApiKeyProvisioner", "issue_scoped_key", "revoke_compromised_key"),
+                ("KeyQuotaTracker", "record_key_usage", "prune_quota_buckets"),
+                ("MerchantKeyAuditor", "audit_key_permissions", "export_key_manifest"),
+            ],
+        ),
+        (
+            "src/auth/oauth_provider.py",
+            "OAuthExchange",
+            "OAuth2 authorization code exchange and OIDC discovery service.",
+            [
+                ("OAuthTokenExchanger", "exchange_authorization_code", "validate_pkce_verifier"),
+                ("OidcDiscoveryClient", "fetch_provider_metadata", "cache_jwks_document"),
+                ("ConsentGrantStore", "record_user_consent", "revoke_oauth_grant"),
+            ],
+        ),
+        (
+            "src/crypto/hmac_signer.py",
+            "WebhookHmacSigner",
+            "HMAC-SHA256 payload signing for outbound merchant webhooks.",
+            [
+                ("HmacDigestBuilder", "compute_payload_digest", "verify_timestamp_tolerance"),
+                ("SecretVaultClient", "fetch_signing_secret", "rotate_webhook_secret"),
+            ],
+        ),
+        (
+            "src/middleware/rate_limiter.py",
+            "SlidingWindowLimiter",
+            "Distributed sliding-window rate limiter before require_auth execution.",
+            [
+                ("TokenBucketCoordinator", "acquire_slot", "replenish_tokens"),
+                ("BurstPenaltyScorer", "evaluate_burst_factor", "format_retry_after"),
+            ],
+        ),
+        (
+            "src/services/billing_ledger.py",
+            "BillingLedgerService",
+            "Double-entry billing ledger for settled checkout orders and regional tax reporting.",
+            [
+                ("JournalBatchWriter", "post_settlement_entries", "reconcile_tax_withholding"),
+                ("InvoiceNumberGenerator", "allocate_invoice_sequence", "format_fiscal_period"),
+                ("PayoutScheduleCalculator", "estimate_merchant_payout", "deduct_platform_fee"),
+            ],
+        ),
+        (
+            "src/services/tax_compliance.py",
+            "TaxComplianceArchive",
+            "Historical VAT and regional tax archive (live checkout calculation uses order_engine.apply_regional_tax).",
+            [
+                ("VatReturnAggregator", "aggregate_quarterly_vat", "validate_vies_registration"),
+                ("JurisdictionRuleStore", "resolve_country_threshold", "export_compliance_csv"),
+                ("FiscalExemptionChecker", "verify_diplomatic_exemption", "normalize_tax_id"),
+            ],
+        ),
+        (
+            "src/services/inventory_sync.py",
+            "InventoryReservationService",
+            "Warehouse SKU stock reservation and backorder synchronization.",
+            [
+                ("StockAllocationEngine", "reserve_sku_units", "release_expired_holds"),
+                ("WarehouseRouter", "select_nearest_fulfillment_node", "estimate_transit_days"),
+            ],
+        ),
+        (
+            "src/services/webhook_dispatcher.py",
+            "WebhookDeliveryWorker",
+            "Exponential-backoff webhook delivery worker for process_checkout events.",
+            [
+                ("DeliveryQueueProcessor", "dispatch_pending_events", "schedule_dead_letter_retry"),
+                ("EndpointHealthMonitor", "record_endpoint_status", "disable_failing_webhook"),
+            ],
+        ),
+        (
+            "src/routes/refunds.py",
+            "RefundRouteHandler",
+            "Partial and full refund route handler referencing calculate_order_total.",
+            [
+                ("RefundEligibilityChecker", "verify_refund_window", "compute_restocking_fee"),
+                ("GatewayReversalClient", "submit_refund_request", "poll_reversal_status"),
+            ],
+        ),
+        (
+            "src/routes/subscriptions.py",
+            "SubscriptionRouteHandler",
+            "Recurring billing cycle route handler and proration calculator.",
+            [
+                ("ProrationEngine", "calculate_plan_upgrade_delta", "align_billing_anchor"),
+                ("DunningRetryManager", "evaluate_past_due_invoice", "trigger_dunning_notice"),
+            ],
+        ),
+        (
+            "src/models/entities.py",
+            "DomainEntities",
+            "Core data transfer records for checkout, session tokens, and tax lines.",
+            [
+                ("OrderRecordSerializer", "to_wire_dict", "validate_schema_version"),
+                ("AuditEventBuilder", "attach_actor_metadata", "redact_sensitive_fields"),
+            ],
+        ),
+    ]
+    for rel_path, mod_tag, doc_desc, cls_specs in sibling_specs:
+        (target / rel_path).write_text(
+            f'"""{doc_desc}"""\n\n' + _make_domain_padding(mod_tag, cls_specs),
+            encoding="utf-8",
+        )
+
     # Create a synthetic lockfile to test guardrail blocking
     lock_entries = ",\n".join(
         f'    "pkg-{i}": {{"version": "1.0.{i}", "resolved": "https://registry.npmjs.org/pkg-{i}"}}'
-        for i in range(1, 150)
+        for i in range(1, 180)
     )
     (target / "package-lock.json").write_text(
         f'{{\n  "name": "demo-app",\n  "lockfileVersion": 3,\n  "packages": {{\n{lock_entries}\n  }}\n}}\n',
@@ -160,6 +380,22 @@ def _populate_sample_repo(target: Path) -> None:
         "    def test_invalid_token_rejected(self) -> None:\n"
         '        res = process_checkout("bad_tok", 100.0)\n'
         '        self.assertEqual(res["status"], 401)\n\n'
+        'if __name__ == "__main__":\n'
+        "    unittest.main()\n",
+        encoding="utf-8",
+    )
+
+    (target / "tests" / "test_billing.py").write_text(
+        "import unittest\n"
+        "from src.services.billing_ledger import JournalBatchWriter\n"
+        "from src.services.inventory_sync import StockAllocationEngine\n\n"
+        "class TestBillingAndInventory(unittest.TestCase):\n"
+        "    def test_journal_batch_writer(self) -> None:\n"
+        "        w = JournalBatchWriter()\n"
+        '        self.assertEqual(w.post_settlement_entries("ord_1", 108.0), 108.0)\n\n'
+        "    def test_stock_allocation(self) -> None:\n"
+        "        s = StockAllocationEngine()\n"
+        '        self.assertEqual(s.reserve_sku_units("sku_9", 5.0), 5.0)\n\n'
         'if __name__ == "__main__":\n'
         "    unittest.main()\n",
         encoding="utf-8",
