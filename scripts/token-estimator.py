@@ -335,6 +335,7 @@ class TokenEstimator:
             reasoning_tokens=reasoning_tokens,
             output_tokens=output_tokens,
             unoptimized_tokens=unoptimized_tokens,
+            profile_code=profile.code,
         )
 
         matched_names = [str(s["name"]) for s in graph_slice.matched_symbols]
@@ -373,9 +374,11 @@ class TokenEstimator:
         reasoning_tokens: int,
         output_tokens: int,
         unoptimized_tokens: int,
+        profile_code: str = "B",
     ) -> Dict[str, ModelCostEstimate]:
         models_cfg: Dict[str, Dict[str, object]] = self.pricing.get("models", {})  # type: ignore[assignment]
         per_unit = float(self.pricing.get("per_tokens", 1_000_000))
+        scale_factors: Dict[str, float] = self.calibration.get("cost_scale_factors", {})  # type: ignore[assignment]
         estimates: Dict[str, ModelCostEstimate] = {}
 
         for model_id, m in models_cfg.items():
@@ -383,13 +386,14 @@ class TokenEstimator:
             cached_rate = float(m["cached_input_per_1m"]) / per_unit
             out_rate = float(m["output_per_1m"]) / per_unit
             r_mult = float(m.get("reasoning_multiplier", 1.0))
+            c_scale = float(scale_factors.get(f"{model_id}:{profile_code}", 1.0)) if isinstance(scale_factors, dict) else 1.0
 
             effective_out = output_tokens + int(reasoning_tokens * r_mult)
-            uncached_usd = (input_tokens * in_rate) + (effective_out * out_rate)
+            uncached_usd = ((input_tokens * in_rate) + (effective_out * out_rate)) * c_scale
             # Assume 80% of input + tool loop context hits KV cache when cache hygiene is active
             cached_input_part = int(input_tokens * 0.80)
             fresh_input_part = input_tokens - cached_input_part
-            cached_usd = (fresh_input_part * in_rate) + (cached_input_part * cached_rate) + (effective_out * out_rate)
+            cached_usd = ((fresh_input_part * in_rate) + (cached_input_part * cached_rate) + (effective_out * out_rate)) * c_scale
 
             unopt_in = int(unoptimized_tokens * 0.82)
             unopt_out = unoptimized_tokens - unopt_in

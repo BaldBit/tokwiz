@@ -199,13 +199,29 @@ class TestEndToEndCLIAndResilience(unittest.TestCase):
             ]
             self.assertEqual(len(forecasts), 3)
 
-            # Now simulate Turn 1 finishing — must reconcile forecasts[0], NOT forecasts[2]!
-            res1 = post_mod.handle_post_turn({"cwd": str(tmp_ws)})
+            # 1. Calling post-turn without usage or transcript must NOT invent fake turns
+            res_empty = post_mod.handle_post_turn({"cwd": str(tmp_ws)})
+            self.assertFalse(res_empty["reconciled"])
+
+            # 2. Now simulate Turn 1 finishing with real usage — must reconcile forecasts[0], NOT forecasts[2]!
+            res1 = post_mod.handle_post_turn(
+                {
+                    "cwd": str(tmp_ws),
+                    "real_steps": 6,
+                    "usage": {"input_tokens": 5000, "cache_read_input_tokens": 4000, "output_tokens": 600, "reasoning_tokens": 400},
+                }
+            )
             self.assertTrue(res1["reconciled"])
             self.assertEqual(res1["forecast_id"], forecasts[0]["forecast_id"])
 
-            # Simulate Turn 2 finishing — must reconcile forecasts[1]!
-            res2 = post_mod.handle_post_turn({"cwd": str(tmp_ws)})
+            # 3. Simulate Turn 2 finishing with real usage — must reconcile forecasts[1], leaving forecasts[2] pending!
+            res2 = post_mod.handle_post_turn(
+                {
+                    "cwd": str(tmp_ws),
+                    "real_steps": 5,
+                    "usage": {"input_tokens": 3500, "cache_read_input_tokens": 2800, "output_tokens": 450, "reasoning_tokens": 250},
+                }
+            )
             self.assertTrue(res2["reconciled"])
             self.assertEqual(res2["forecast_id"], forecasts[1]["forecast_id"])
         finally:

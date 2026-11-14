@@ -171,7 +171,6 @@ def _cmd_init(argv: List[str]) -> int:
                         "timeout": 5,
                     }
                 ],
-                "PostInvocation": [{"matcher": ".*", "command": post_turn_cmd, "timeout": 5}],
                 "Stop": [{"matcher": ".*", "command": post_turn_cmd, "timeout": 5}],
             }
         }

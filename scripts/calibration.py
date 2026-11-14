@@ -234,22 +234,30 @@ class CalibrationEngine:
             base_f_cost = 0.005
             unopt_cost = 0.015
 
-        # Apply learned cost scale factor for this (model, profile) if present
+        # Preserve the exact forecast tokens and cost that were predicted pre-prompt
+        # (learned EMA multipliers in calibration.json are applied by TokenEstimator on future forecasts)
         scale_key = f"{usage.model_id}:{profile_code}"
         scale_map: Dict[str, float] = weights.setdefault("cost_scale_factors", {})  # type: ignore[assignment]
-        cost_scale = float(scale_map.get(scale_key, 1.0))
 
-        f_total_tok = int(round(int(forecast.get("total_tokens", 1000)) * cost_scale))
-        f_cost = round(base_f_cost * cost_scale, 6)
+        f_total_tok = int(forecast.get("total_tokens", 1000))
+        f_cost = round(base_f_cost, 6)
         r_cost = compute_real_cost_usd(usage, self.pricing)
 
         f_in_tok = int(forecast.get("context_tokens", 0)) + int(forecast.get("prompt_tokens", 0)) + int(forecast.get("tool_loop_tokens", 0))
         f_tool_tok = int(forecast.get("tool_loop_tokens", 0))
         f_reason_tok = int(forecast.get("reasoning_tokens", 0))
         f_out_tok = int(forecast.get("output_tokens", 0))
-        unopt_tok = int(forecast.get("unoptimized_tokens", max(f_total_tok * 2, usage.total_tokens + 1000)))
+        real_base_tok = int(usage_payload.get("real_baseline_tokens", 0))
+        if real_base_tok > 0:
+            unopt_tok = real_base_tok
+            real_base_cost = float(usage_payload.get("real_baseline_cost_usd", 0.0))
+            if real_base_cost > 0.0:
+                unopt_cost = real_base_cost
+            skill_overhead_tokens = 0
+        else:
+            unopt_tok = int(forecast.get("unoptimized_tokens", max(f_total_tok * 2, usage.total_tokens + 1000)))
 
-        # Net Savings = Estimated Unoptimized Baseline - (Actual Workflow Tokens + TokWiz Skill/Graph Tokens)
+        # Net Savings = Baseline Tokens - (Actual Workflow Tokens + TokWiz Skill/Graph Tokens)
         net_saved_tok = max(0, unopt_tok - (usage.total_tokens + skill_overhead_tokens))
         net_saved_cost = round(max(0.0, unopt_cost - r_cost), 6)
 

@@ -161,6 +161,20 @@ class TelemetryStore:
             )
 
     def get_summary(self, days: Optional[int] = None, limit: int = 50) -> Dict[str, object]:
+        # Automatically sync any completed real Antigravity transcript turns for this workspace
+        try:
+            import importlib.util
+
+            hook_path = Path(__file__).resolve().parent.parent / "hooks" / "post-turn-record.py"
+            if hook_path.exists() and (self.root_dir / ".tokwiz" / "forecasts.jsonl").exists():
+                spec = importlib.util.spec_from_file_location("post_turn_sync", hook_path)
+                if spec and spec.loader:
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                    mod.sync_workspace_transcript_turns(self.root_dir)
+        except Exception:
+            pass
+
         cutoff = (time.time() - days * 86400.0) if days is not None else 0.0
         with self._connect() as conn:
             rows = conn.execute(
@@ -389,6 +403,7 @@ def render_cli_stats(summary: Dict[str, object]) -> str:
         "-" * 96,
     ]
     turns_list: List[Dict[str, object]] = summary.get("turns", [])  # type: ignore[assignment]
+    reconciled_ids = {str(t.get("forecast_id", "")) for t in turns_list}
     for t in turns_list[-10:]:
         tags = ", ".join(t.get("variance_tags", []))  # type: ignore[arg-type]
         lines.append(
@@ -399,6 +414,21 @@ def render_cli_stats(summary: Dict[str, object]) -> str:
             f"${float(t['forecast_cost_usd']):>10.4f} "
             f"${float(t['real_cost_usd']):>10.4f} "
             f"{float(t['ape_pct']):>6.1f}%  {tags}"
+        )
+    f_list: List[Dict[str, object]] = summary.get("forecasts", [])  # type: ignore[assignment]
+    pending = [f for f in f_list if str(f.get("forecast_id", "")) not in reconciled_ids]
+    for f in pending:
+        c_map = f.get("costs", {})
+        c_sonnet = c_map.get("claude-sonnet-4", {}) if isinstance(c_map, dict) else {}
+        f_usd = float(c_sonnet.get("cached_cost_usd", 0.0)) if isinstance(c_sonnet, dict) else 0.0
+        lines.append(
+            f"{str(f.get('forecast_id', '')):<14} "
+            f"P-{str(f.get('profile_code', 'B'))}(L{f.get('optimization_level', 1)}) "
+            f"{int(f.get('total_tokens', 0)):>13,} "
+            f"{'—':>10} "
+            f"${f_usd:>10.4f} "
+            f"{'—':>11} "
+            f"{'—':>7}  PENDING (AWAITING TURN END)"
         )
     return "\n".join(lines)
 
