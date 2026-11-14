@@ -113,49 +113,61 @@ class TestEndToEndCLIAndResilience(unittest.TestCase):
 
     def test_demo_setup_preserves_directory_inode_and_keeps_baseline_clean(self) -> None:
         """`demo/setup-ab-demo.py` must preserve folder inodes and never create `.tokwiz` in baseline."""
-        demo_ws = REPO_ROOT / "demo" / "workspace"
-        tokwiz_dir = demo_ws / "project-tokwiz"
-        baseline_dir = demo_ws / "project-baseline"
-        tokwiz_dir.mkdir(parents=True, exist_ok=True)
-        baseline_dir.mkdir(parents=True, exist_ok=True)
+        demo_ws = Path(tempfile.mkdtemp()).resolve()
+        try:
+            tokwiz_dir = demo_ws / "project-tokwiz"
+            baseline_dir = demo_ws / "project-baseline"
+            tokwiz_dir.mkdir(parents=True, exist_ok=True)
+            baseline_dir.mkdir(parents=True, exist_ok=True)
 
-        ino_before_tokwiz = tokwiz_dir.stat().st_ino
-        ino_before_base = baseline_dir.stat().st_ino
+            ino_before_tokwiz = tokwiz_dir.stat().st_ino
+            ino_before_base = baseline_dir.stat().st_ino
 
-        subprocess.run(
-            [sys.executable, str(REPO_ROOT / "demo" / "setup-ab-demo.py")],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+            subprocess.run(
+                [sys.executable, str(REPO_ROOT / "demo" / "setup-ab-demo.py"), "--workspace-dir", str(demo_ws)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
 
-        self.assertEqual(tokwiz_dir.stat().st_ino, ino_before_tokwiz)
-        self.assertEqual(baseline_dir.stat().st_ino, ino_before_base)
-        self.assertFalse((baseline_dir / ".tokwiz").exists())
-        self.assertTrue((baseline_dir / ".git").exists())
-        self.assertTrue((tokwiz_dir / ".tokwiz" / "graph.db").exists())
-        self.assertTrue((tokwiz_dir / ".git").exists())
+            self.assertEqual(tokwiz_dir.stat().st_ino, ino_before_tokwiz)
+            self.assertEqual(baseline_dir.stat().st_ino, ino_before_base)
+            self.assertFalse((baseline_dir / ".tokwiz").exists())
+            self.assertTrue((baseline_dir / ".git").exists())
+            self.assertTrue((tokwiz_dir / ".tokwiz" / "graph.db").exists())
+            self.assertTrue((tokwiz_dir / ".git").exists())
+        finally:
+            shutil.rmtree(demo_ws, ignore_errors=True)
 
     def test_macos_system_python39_compatibility(self) -> None:
         """Verify `/usr/bin/python3` (Python 3.9, used by `#!/usr/bin/env python3`) runs all CLI commands."""
         sys_py = Path("/usr/bin/python3")
         if not sys_py.exists():
             self.skipTest("/usr/bin/python3 not present")
-        tokwiz_dir = REPO_ROOT / "demo" / "workspace" / "project-tokwiz"
-        for args in (
-            ["predict", "Update validate_token to support x-api-key header tokens", "--root", str(tokwiz_dir)],
-            ["stats", "--root", str(tokwiz_dir)],
-            ["graph", "--root", str(tokwiz_dir), "query", "validate_token", "--max-tokens", "300"],
-            ["skeleton", str(tokwiz_dir / "src" / "services" / "order_engine.py")],
-        ):
-            proc = subprocess.run(
-                [str(sys_py), str(SCRIPTS_DIR / "cli.py"), *args],
-                capture_output=True,
-                text=True,
-                check=True,
+        tmp_ws = Path(tempfile.mkdtemp()).resolve()
+        try:
+            (tmp_ws / "src").mkdir(parents=True, exist_ok=True)
+            sample_py = tmp_ws / "src" / "order_engine.py"
+            sample_py.write_text(
+                "def validate_token(tok: str) -> bool:\n    return tok.startswith('tk_')\n",
+                encoding="utf-8",
             )
-            self.assertEqual(proc.returncode, 0)
-            self.assertTrue(proc.stdout.strip())
+            for args in (
+                ["predict", "Update validate_token to support x-api-key header tokens", "--root", str(tmp_ws)],
+                ["stats", "--root", str(tmp_ws)],
+                ["graph", "--root", str(tmp_ws), "query", "validate_token", "--max-tokens", "300"],
+                ["skeleton", str(sample_py)],
+            ):
+                proc = subprocess.run(
+                    [str(sys_py), str(SCRIPTS_DIR / "cli.py"), *args],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                self.assertEqual(proc.returncode, 0)
+                self.assertTrue(proc.stdout.strip())
+        finally:
+            shutil.rmtree(tmp_ws, ignore_errors=True)
 
 
 if __name__ == "__main__":

@@ -174,9 +174,20 @@ def _populate_sample_repo(target: Path) -> None:
     )
 
 
-def main() -> int:
-    baseline_dir = WORKSPACE_DIR / "project-baseline"
-    tokwiz_dir = WORKSPACE_DIR / "project-tokwiz"
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Set up paired A/B test workspaces for TokWiz.")
+    parser.add_argument(
+        "--workspace-dir",
+        default=str(WORKSPACE_DIR),
+        help="Target workspace directory (default: demo/workspace)",
+    )
+    args = parser.parse_args(argv)
+    ws_dir = Path(args.workspace_dir).resolve()
+
+    baseline_dir = ws_dir / "project-baseline"
+    tokwiz_dir = ws_dir / "project-tokwiz"
 
     _populate_sample_repo(baseline_dir)
     _populate_sample_repo(tokwiz_dir)
