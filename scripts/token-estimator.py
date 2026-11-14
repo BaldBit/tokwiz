@@ -268,6 +268,12 @@ class TokenEstimator:
         step_mult = float(
             self.calibration.get("profile_step_multipliers", {}).get(profile.code, 1.0)  # type: ignore[union-attr]
         )
+        tool_mult = float(
+            self.calibration.get("tool_output_multipliers", {}).get(profile.code, 1.0)  # type: ignore[union-attr]
+        )
+        reason_mult = float(
+            self.calibration.get("reasoning_multipliers", {}).get(profile.code, 1.0)  # type: ignore[union-attr]
+        )
         n_steps = max(profile.min_steps, min(profile.max_steps, round(profile.default_steps * step_mult)))
 
         prompt_tok = count_tokens(prompt)
@@ -281,6 +287,7 @@ class TokenEstimator:
         per_step_tool_out = int(
             (profile.avg_tool_out_tokens + min(400, blast_line_tokens // max(1, n_steps)))
             * level_compression
+            * tool_mult
         )
         per_step_tool_in = profile.avg_tool_in_tokens
 
@@ -292,7 +299,7 @@ class TokenEstimator:
             running_ctx += per_step_tool_in + per_step_tool_out
 
         output_tokens = int(profile.base_output_tokens * level_compression)
-        reasoning_tokens = int((prompt_tok + output_tokens + per_step_tool_out) * profile.reasoning_ratio)
+        reasoning_tokens = int((prompt_tok + output_tokens + per_step_tool_out) * profile.reasoning_ratio * reason_mult)
 
         total_tokens = context_tokens + prompt_tok + tool_loop_tokens + reasoning_tokens + output_tokens
 

@@ -237,6 +237,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             "  graph <build|query>     Build or query the Tier 2 Tree-Sitter PageRank graph\n"
             "  skeleton <file>         Extract compact AST signature skeleton with line numbers\n"
             "  filter [-- <cmd>]       Compress noisy test, build, and git shell outputs\n"
+            "  stats [--session|--days N]  Display token savings & Forecast-vs-Real cost report\n"
+            "  dashboard [--port 8420] Launch interactive local analytics web dashboard\n"
             "  level <1|2|3|auto>      Configure optimization level\n"
             "  budget --max-prompt-cost <usd>  Configure prompt cost threshold"
         )
@@ -256,6 +258,18 @@ def main(argv: Optional[List[str]] = None) -> int:
         return int(mod.main(rest))
     if cmd == "filter":
         mod = _load_script_module("output_filter", "output-filter.py")
+        return int(mod.main(rest))
+    if cmd == "stats":
+        mod = _load_script_module("telemetry", "telemetry.py")
+        return int(mod.main(rest))
+    if cmd == "dashboard":
+        spec = importlib.util.spec_from_file_location(
+            "dashboard_server", _REPO_ROOT / "dashboard" / "server.py"
+        )
+        assert spec and spec.loader
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["dashboard_server"] = mod
+        spec.loader.exec_module(mod)
         return int(mod.main(rest))
     if cmd == "level":
         return _cmd_level(rest)
