@@ -1,0 +1,32 @@
+{
+  "hooks": {
+    "PreInvocation": [
+      {
+        "matcher": ".*",
+        "command": "python3 hooks/pre-prompt-predict.py",
+        "timeout": 5
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "read_file|view_file|Read|run_command|Bash",
+        "command": "python3 hooks/pre-tool-guard.py",
+        "timeout": 5
+      }
+    ],
+    "PostInvocation": [
+      {
+        "matcher": ".*",
+        "command": "python3 hooks/post-turn-record.py",
+        "timeout": 5
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": ".*",
+        "command": "python3 hooks/post-turn-record.py",
+        "timeout": 5
+      }
+    ]
+  }
+}

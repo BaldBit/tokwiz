@@ -1,0 +1,37 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 hooks/pre-prompt-predict.py"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Read|read_file|view_file|Bash|run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 hooks/pre-tool-guard.py"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 hooks/post-turn-record.py"
+          }
+        ]
+      }
+    ]
+  }
+}
