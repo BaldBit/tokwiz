@@ -26,8 +26,13 @@ WORKSPACE_DIR = DEMO_DIR / "workspace"
 
 
 def _populate_sample_repo(target: Path) -> None:
-    if target.exists():
-        shutil.rmtree(target)
+    target.mkdir(parents=True, exist_ok=True)
+    # Clean contents in-place without unlinking `target` itself so open shells keep a valid CWD inode
+    for child in list(target.iterdir()):
+        if child.is_dir() and not child.is_symlink():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
     (target / "src" / "crypto").mkdir(parents=True, exist_ok=True)
     (target / "src" / "auth").mkdir(parents=True, exist_ok=True)
     (target / "src" / "middleware").mkdir(parents=True, exist_ok=True)
@@ -125,7 +130,7 @@ def _populate_sample_repo(target: Path) -> None:
             f"        base = self.{helper_m}(amount)\n"
             + "".join(f"        check_{k} = base + {k} * 0.0\n" for k in range(1, 20))
             + "        return round(check_19 * 0.0, 2) if 'discount' in '"
-            + primary_m
+            + cls_name.lower()
             + "' else round(check_19, 2)\n\n"
         )
     (target / "src" / "services" / "order_engine.py").write_text(

@@ -11,6 +11,7 @@ import argparse
 import importlib.util
 import json
 import math
+import os
 import re
 import sys
 import time
@@ -183,6 +184,19 @@ def load_pricing_matrix(pricing_path: Optional[Path] = None) -> Dict[str, object
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _safe_resolve(path_val: Path | str) -> Path:
+    try:
+        return Path(path_val).resolve()
+    except FileNotFoundError:
+        pwd_env = os.environ.get("PWD")
+        if pwd_env and os.path.isdir(pwd_env):
+            os.chdir(pwd_env)
+            p = Path(path_val)
+            return p.resolve() if p.is_absolute() else (Path(pwd_env) / p).resolve()
+        os.chdir(str(_REPO_ROOT))
+        return _REPO_ROOT
+
+
 class TokenEstimator:
     """Forecasts multi-step workflow tokens and cross-provider cost."""
 
@@ -192,7 +206,7 @@ class TokenEstimator:
         pricing_path: Optional[Path] = None,
         graph: Optional[ProjectGraph] = None,
     ) -> None:
-        self.root_dir = Path(root_dir).resolve()
+        self.root_dir = _safe_resolve(root_dir)
         self.pricing = load_pricing_matrix(pricing_path)
         self.graph = graph or ProjectGraph(self.root_dir)
         self.calibration = self._load_calibration()

@@ -1534,7 +1534,8 @@
         badge.textContent = "● Sample Session Preview (Not Live Data)";
         badge.className = "mode-badge demo";
       } else {
-        badge.textContent = "● Live Workspace Telemetry";
+        const wsName = data.workspace_name ? ` (${data.workspace_name})` : "";
+        badge.textContent = `● Live Workspace Telemetry${wsName}`;
         badge.className = "mode-badge live";
       }
 

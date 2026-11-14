@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -12,6 +13,27 @@ from typing import Dict, List, Optional, Set
 
 _SCRIPTS_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = _SCRIPTS_DIR.parent
+
+
+def _ensure_valid_cwd() -> Path:
+    """Recover if the user's shell CWD inode was recreated (e.g. after a folder reset)."""
+    try:
+        return Path(os.getcwd()).resolve()
+    except FileNotFoundError:
+        pwd_env = os.environ.get("PWD")
+        if pwd_env and os.path.isdir(pwd_env):
+            os.chdir(pwd_env)
+            return Path(pwd_env).resolve()
+        os.chdir(str(_REPO_ROOT))
+        return _REPO_ROOT
+
+
+def _resolve_root(root_arg: str) -> Path:
+    cwd = _ensure_valid_cwd()
+    if not root_arg or root_arg == ".":
+        return cwd
+    p = Path(root_arg)
+    return p.resolve() if p.is_absolute() else (cwd / p).resolve()
 
 
 def _load_script_module(name: str, filename: str):
@@ -68,8 +90,8 @@ def _cmd_init(argv: List[str]) -> int:
         print(f"Error: No valid agents specified in '{args.agent}'", file=sys.stderr)
         return 1
 
-    target_root = Path(args.root).resolve()
-    base_dir = Path(args.home).resolve() if (args.is_global and args.home) else (
+    target_root = _resolve_root(args.root)
+    base_dir = _resolve_root(args.home) if (args.is_global and args.home) else (
         Path.home() if args.is_global else target_root
     )
 
@@ -187,7 +209,7 @@ def _cmd_level(argv: List[str]) -> int:
     parser.add_argument("--root", default=".", help="Repository root")
     args = parser.parse_args(argv)
 
-    cfg_dir = Path(args.root).resolve() / ".tokwiz"
+    cfg_dir = _resolve_root(args.root) / ".tokwiz"
     cfg_dir.mkdir(parents=True, exist_ok=True)
     cfg_file = cfg_dir / "config.json"
     cfg = {}
@@ -209,7 +231,7 @@ def _cmd_budget(argv: List[str]) -> int:
     parser.add_argument("--root", default=".", help="Repository root")
     args = parser.parse_args(argv)
 
-    cfg_dir = Path(args.root).resolve() / ".tokwiz"
+    cfg_dir = _resolve_root(args.root) / ".tokwiz"
     cfg_dir.mkdir(parents=True, exist_ok=True)
     cfg_file = cfg_dir / "config.json"
     cfg = {}
@@ -227,6 +249,7 @@ def _cmd_budget(argv: List[str]) -> int:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    _ensure_valid_cwd()
     args_list = list(sys.argv[1:] if argv is None else argv)
     if not args_list or args_list[0] in ("-h", "--help"):
         print(

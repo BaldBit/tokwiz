@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
+import os
 import sqlite3
 import sys
 import time
@@ -17,12 +18,26 @@ from pathlib import Path
 from typing import Dict, Iterator, List, Optional
 
 
+def _safe_resolve(path_val: Path | str) -> Path:
+    try:
+        return Path(path_val).resolve()
+    except FileNotFoundError:
+        pwd_env = os.environ.get("PWD")
+        if pwd_env and os.path.isdir(pwd_env):
+            os.chdir(pwd_env)
+            p = Path(path_val)
+            return p.resolve() if p.is_absolute() else (Path(pwd_env) / p).resolve()
+        repo_root = Path(__file__).resolve().parent.parent
+        os.chdir(str(repo_root))
+        return repo_root
+
+
 class TelemetryStore:
     """SQLite ledger storing per-turn forecast vs. real reconciliation and guardrail metrics."""
 
     def __init__(self, root_dir: Path | str = ".", db_path: Optional[Path | str] = None) -> None:
-        self.root_dir = Path(root_dir).resolve()
-        self.db_path = Path(db_path).resolve() if db_path else (self.root_dir / ".tokwiz" / "telemetry.db")
+        self.root_dir = _safe_resolve(root_dir)
+        self.db_path = _safe_resolve(db_path) if db_path else (self.root_dir / ".tokwiz" / "telemetry.db")
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 

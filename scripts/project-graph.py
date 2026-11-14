@@ -76,13 +76,27 @@ class GraphSliceResult:
     elapsed_ms: float
 
 
+def _safe_resolve(path_val: Path | str) -> Path:
+    try:
+        return Path(path_val).resolve()
+    except FileNotFoundError:
+        pwd_env = os.environ.get("PWD")
+        if pwd_env and os.path.isdir(pwd_env):
+            os.chdir(pwd_env)
+            p = Path(path_val)
+            return p.resolve() if p.is_absolute() else (Path(pwd_env) / p).resolve()
+        repo_root = Path(__file__).resolve().parent.parent
+        os.chdir(str(repo_root))
+        return repo_root
+
+
 class ProjectGraph:
     """SQLite-backed structural codebase graph with Personalized PageRank."""
 
     def __init__(self, root_dir: Path | str, db_path: Optional[Path | str] = None) -> None:
-        self.root_dir = Path(root_dir).resolve()
+        self.root_dir = _safe_resolve(root_dir)
         if db_path is not None:
-            self.db_path = Path(db_path).resolve()
+            self.db_path = _safe_resolve(db_path)
         else:
             self.db_path = self.root_dir / ".tokwiz" / "graph.db"
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
