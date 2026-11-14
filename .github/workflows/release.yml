@@ -1,0 +1,132 @@
+name: Release & Versioning
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump type (patch, minor, major) or explicit X.Y.Z"
+        required: true
+        default: "patch"
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  version-and-release:
+    name: Semantic Version, Build & GitHub Release
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'chore(release):') && !contains(github.event.head_commit.message, '[skip release]')"
+
+    steps:
+      - name: Checkout repository with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run Test & A/B Benchmark Quality Gate
+        run: |
+          python -m pip install --upgrade pip build
+          python -m pip install -e .
+          python -m unittest discover -s tests -v
+          tokwiz benchmark
+
+      - name: Determine Next Semantic Version
+        id: semver
+        env:
+          INPUT_BUMP: ${{ github.event.inputs.bump }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          python3 - << 'EOF'
+          import os
+          import re
+          import pathlib
+
+          pyproject = pathlib.Path("pyproject.toml")
+          text = pyproject.read_text(encoding="utf-8")
+          m = re.search(r'^version\s*=\s*"(\d+)\.(\d+)\.(\d+)"', text, re.MULTILINE)
+          if not m:
+              raise SystemExit("Could not parse current version from pyproject.toml")
+          major, minor, patch = int(m.group(1)), int(m.group(2)), int(m.group(3))
+          current_ver = f"{major}.{minor}.{patch}"
+
+          bump = (os.environ.get("INPUT_BUMP") or "").strip().lower()
+          msg = (os.environ.get("COMMIT_MSG") or "").strip()
+
+          if re.match(r"^\d+\.\d+\.\d+$", bump):
+              next_ver = bump
+          elif bump == "major" or "BREAKING CHANGE" in msg or re.match(r"^[a-z]+(\([^)]+\))?!:", msg):
+              next_ver = f"{major + 1}.0.0"
+          elif bump == "minor" or msg.startswith("feat"):
+              next_ver = f"{major}.{minor + 1}.0"
+          else:
+              next_ver = f"{major}.{minor}.{patch + 1}"
+
+          # Update pyproject.toml
+          new_text = re.sub(
+              r'^version\s*=\s*"\d+\.\d+\.\d+"',
+              f'version = "{next_ver}"',
+              text,
+              count=1,
+              flags=re.MULTILINE,
+          )
+          pyproject.write_text(new_text, encoding="utf-8")
+
+          # Update scripts/__init__.py
+          init_py = pathlib.Path("scripts/__init__.py")
+          if init_py.exists():
+              init_text = init_py.read_text(encoding="utf-8")
+              init_text = re.sub(
+                  r'__version__\s*=\s*"[^"]+"',
+                  f'__version__ = "{next_ver}"',
+                  init_text,
+              )
+              init_py.write_text(init_text, encoding="utf-8")
+
+          gh_out = pathlib.Path(os.environ["GITHUB_OUTPUT"])
+          with gh_out.open("a", encoding="utf-8") as fh:
+              fh.write(f"current_version={current_ver}\n")
+              fh.write(f"next_version={next_ver}\n")
+              fh.write(f"tag=v{next_ver}\n")
+          print(f"Bumped version: {current_ver} -> {next_ver}")
+          EOF
+
+      - name: Build Python Distribution Artifacts (sdist & wheel)
+        run: python -m build
+
+      - name: Commit Version Bump & Push Tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          TAG="${{ steps.semver.outputs.tag }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists; skipping commit/tag push."
+          else
+            git add pyproject.toml scripts/__init__.py
+            git commit -m "chore(release): ${TAG} [skip ci]"
+            git tag -a "${TAG}" -m "Release ${TAG}"
+            git push origin HEAD:main --follow-tags
+          fi
+
+      - name: Create GitHub Release with Artifacts & Release Notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.semver.outputs.tag }}"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" dist/* \
+              --title "TokWiz ${TAG}" \
+              --generate-notes
+          fi
