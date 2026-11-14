@@ -55,7 +55,19 @@ Modern AI coding agents (**Claude Code**, **OpenAI Codex CLI**, **Google Gemini 
 
 ## Verified A/B Benchmark Results
 
-Every TokWiz benchmark measures **Net Workflow Savings**—explicitly deducting the token footprint of `SKILL.md` (<350 tokens) and Project Graph slices from total savings:
+Every TokWiz benchmark measures **Net Workflow Savings**—explicitly deducting the token footprint of `SKILL.md` (<350 tokens) and Project Graph slices from total savings.
+
+### 1. Live IDE Session Head-to-Head Verification (`tokwiz verify-ab`)
+Measured directly from paired `.jsonl` session transcripts across two identical workspaces (`project-baseline` vs. `project-tokwiz`):
+
+| Live Prompt Task | Baseline Steps | TokWiz Steps | Baseline Real Tok | TokWiz Real Tok | Verified Net Saved | Net Reduction % | Why Savings Occurred |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | :--- |
+| **1. Multi-File Auth Refactor** (`validate_token` + `require_auth` + tests) | 33 | 18 | 25,062 | 11,237 | **+13,825** | **55.2%** | Graph query pinpointed callers in 1 step instead of 15 exploratory `grep`/`find`/read loops. |
+| **2. Single-Function Tax Edit** (`apply_regional_tax` in `order_engine.py`) | 12 | 12 | 6,225 | 5,737 | **+488** | **7.8%** | Small localized edit where prompt named the exact file; AST skeleton + ranged read still saved >2,100 file-read tokens. |
+| **3. Cross-Module Call-Chain Trace** (`process_checkout` → `validate_token`) | 2 | 5 | 2,591 | 2,059 | **+532** | **20.5%** | Graph query + ranged `L1-L25` read avoided ingesting full 347-line `order_engine.py`. |
+| **Live Session Total** | **47** | **35** | **33,878** | **19,033** | **+14,845** | **43.8%** | **100% unit tests passing in both workspaces** |
+
+### 2. Multi-Scale Automated Benchmark Suite (`tokwiz benchmark`)
 
 | Benchmark Scenario | Unoptimized Baseline | TokWiz (incl. Overhead) | Net Tokens Saved | Net Reduction % | Quality Retention |
 | :--- | ---: | ---: | ---: | ---: | ---: |
@@ -66,7 +78,7 @@ Every TokWiz benchmark measures **Net Workflow Savings**—explicitly deducting 
 | **5. Technical Research & Docs Analysis** | 17,770 | 3,845 | **13,925** | **78.4%** | **96.5%** |
 | **Overall Suite Total** | **153,640** | **32,195** | **121,445** | **79.0%** | **97.8% avg** |
 
-> **Safety & Quality Invariant:** TokWiz **never** removes or compresses information affecting code correctness, security, user constraints, business logic, or test verification.
+> **Receipt-Backed Accounting & Safety Invariant:** Every saved token in daily usage is backed by an itemized tool-call receipt (`SKELETON_AND_RANGE`, `RANGED_READ`, `GRAPH_QUERY`, `OUTPUT_FILTER`)—with `0` tokens credited if an agent reads a full file anyway. TokWiz **never** removes or compresses information affecting code correctness, security, user constraints, business logic, or test verification.
 
 ---
 
@@ -105,8 +117,11 @@ tokwiz graph query validateToken --max-tokens 400
 # Extract a compact AST signature skeleton with exact line numbers
 tokwiz skeleton scripts/project-graph.py
 
-# View Forecasted vs. Real Cost variance & net savings in the terminal
+# View Forecasted vs. Real Cost variance, provenance badges & itemized receipts
 tokwiz stats
+
+# Verify head-to-head A/B savings from real IDE session transcripts
+tokwiz verify-ab
 
 # Launch the interactive local web analytics dashboard
 tokwiz dashboard --port 8420
