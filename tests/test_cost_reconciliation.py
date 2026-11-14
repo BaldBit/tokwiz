@@ -240,7 +240,7 @@ class TestCostReconciliationAndCalibration(unittest.TestCase):
             with urlopen(f"http://127.0.0.1:{port}/") as resp_html:
                 self.assertEqual(resp_html.status, 200)
                 html = resp_html.read().decode("utf-8")
-                self.assertIn("3D Interactive Project Graph", html)
+                self.assertIn("Interactive Project Graph", html)
         finally:
             server.shutdown()
             server.server_close()

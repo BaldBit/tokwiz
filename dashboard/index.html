@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TokWiz — 3D Codebase Graph & Real-Time Cost Analytics</title>
+  <title>TokWiz — Codebase Graph & Real-Time Cost Analytics</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <style>
     :root {
@@ -95,7 +95,7 @@
     .kpi-value { font-size: 1.55rem; font-weight: 700; margin: 5px 0 3px; font-variant-numeric: tabular-nums; }
     .kpi-sub { font-size: 0.78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 
-    /* 3D Graph Visualizer Section */
+    /* Project Graph Visualizer Section */
     .graph-section {
       background: var(--card);
       border: 1px solid var(--border);
@@ -115,8 +115,9 @@
     .graph-header h2 { font-size: 1.05rem; font-weight: 700; }
     .graph-layout {
       display: grid;
-      grid-template-columns: 1fr 370px;
+      grid-template-columns: 1fr 380px;
       gap: 16px;
+      align-items: stretch;
     }
     @media (max-width: 1080px) {
       .graph-layout { grid-template-columns: 1fr; }
@@ -127,9 +128,12 @@
       border-radius: 12px;
       position: relative;
       overflow: hidden;
-      height: 560px;
+      min-height: 600px;
+      height: 100%;
     }
     #projectGraphCanvas {
+      position: absolute;
+      inset: 0;
       width: 100%;
       height: 100%;
       display: block;
@@ -197,13 +201,29 @@
       padding: 16px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      justify-content: space-between;
+      gap: 10px;
+      min-height: 600px;
+      height: 100%;
     }
     .graph-sidebar h3 {
       font-size: 0.84rem;
       text-transform: uppercase;
       letter-spacing: 0.05em;
       color: var(--accent);
+    }
+    .sidebar-hint {
+      font-size: 0.74rem;
+      color: var(--muted);
+      margin-top: 2px;
+      margin-bottom: 6px;
+      line-height: 1.4;
+    }
+    .hubs-chart-wrap {
+      position: relative;
+      flex: 1 1 190px;
+      min-height: 185px;
+      width: 100%;
     }
     .inspector-box {
       font-size: 0.82rem;
@@ -330,10 +350,10 @@
   <header>
     <div>
       <div class="title-group">
-        <h1>⚡ TokWiz 3D Codebase Graph & Cost Analytics</h1>
+        <h1>⚡ TokWiz Codebase Graph & Cost Analytics</h1>
         <span id="modeBadge" class="mode-badge live">● Live Workspace Telemetry</span>
       </div>
-      <p>360° Interactive 3D AST + PageRank Graph · Pre-Prompt Cost Forecasting · Real Billed Cost Reconciliation</p>
+      <p>Interactive AST + PageRank Symbol Graph · Pre-Prompt Cost Forecasting · Real Billed Cost Reconciliation</p>
     </div>
     <div class="controls">
       <button id="liveBtn" type="button" class="active">Live Workspace Data</button>
@@ -363,17 +383,17 @@
       <div class="kpi-sub" id="kpiTurnsSub">0 turns recorded in telemetry.db</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">3D Project Graph Index</div>
+      <div class="kpi-label">Project Graph Index</div>
       <div class="kpi-value" id="kpiGraphNodes" style="color: var(--violet);">0 nodes</div>
       <div class="kpi-sub" id="kpiGraphSub">0 files · 0 edges (Live SQLite index)</div>
     </div>
   </section>
 
-  <!-- 3D Rotatable Project Graph Visualizer -->
-  <section class="graph-section" aria-label="3D Rotatable Project Graph Visualizer">
+  <!-- Interactive Project Graph Visualizer -->
+  <section class="graph-section" aria-label="Interactive Project Graph Visualizer">
     <div class="graph-header">
       <div>
-        <h2>🌐 3D Interactive Project Graph (Drag to Rotate 360° · Scroll to Zoom · Click Sphere to Inspect)</h2>
+        <h2>🌐 Interactive Project Graph (Drag to Rotate · Scroll to Zoom · Click Node to Inspect)</h2>
       </div>
       <div class="controls">
         <input type="search" id="graphSearchInput" placeholder="Search function, class, or file..." />
@@ -384,7 +404,7 @@
           <option value="IMPORTS">IMPORTS Only</option>
         </select>
         <button id="autoRotateBtn" type="button">Auto-Orbit: OFF</button>
-        <button id="resetCameraBtn" type="button">Reset 3D View</button>
+        <button id="resetCameraBtn" type="button">Reset View</button>
       </div>
     </div>
 
@@ -392,7 +412,7 @@
       <div class="graph-stage" id="graphStage">
         <canvas id="projectGraphCanvas"></canvas>
         <div class="graph-hud-top">
-          <span>🖱️ Drag: Rotate 3D Orbit · Scroll: Zoom · Click Sphere: Inspect Symbol & 1-Hop Callers/Callees</span>
+          <span>🖱️ Drag: Rotate Graph · Scroll: Zoom · Click Node: Inspect Symbol & 1-Hop Callers/Callees</span>
         </div>
         <div class="graph-zoom-controls">
           <button id="zoomInBtn" type="button" title="Zoom In">+</button>
@@ -407,13 +427,19 @@
       </div>
 
       <aside class="graph-sidebar">
-        <h3>3D Symbol Inspector</h3>
-        <div class="inspector-box" id="nodeInspector">
-          Click any 3D sphere in the graph (or search above) to inspect its exact <code>file:Lstart-Lend</code> range, PageRank score, callers, and callees.
+        <div>
+          <h3>Symbol Inspector</h3>
+          <p class="sidebar-hint">Exact line slice, signature, and 1-hop callers/callees TokWiz feeds the AI instead of reading whole files.</p>
+          <div class="inspector-box" id="nodeInspector">
+            Click any node in the graph (or search above) to inspect its exact <code>file:Lstart-Lend</code> range, PageRank score, callers, and callees.
+          </div>
         </div>
-        <h3>Top PageRank Symbol Hubs</h3>
-        <div style="position:relative; height:225px; width:100%;">
-          <canvas id="hubsChartCanvas"></canvas>
+        <div style="display:flex; flex-direction:column; flex:1; min-height:220px;">
+          <h3 style="margin-top:4px;">Top PageRank Symbol Hubs</h3>
+          <p class="sidebar-hint">Most heavily connected architectural hubs ranked by Personalized PageRank centrality.</p>
+          <div class="hubs-chart-wrap">
+            <canvas id="hubsChartCanvas"></canvas>
+          </div>
         </div>
       </aside>
     </div>
@@ -985,13 +1011,13 @@
 
       box.innerHTML = `
         <div><strong>${node.qualified_name}</strong> <span class="tag">${node.kind}</span></div>
-        <div style="color:var(--muted); margin-top:4px;">File Range: <strong>${node.file_path}:L${node.start_line}-L${node.end_line}</strong></div>
-        <div style="color:var(--muted);">PageRank Centrality: <strong>${node.pagerank}</strong> · In: ${node.in_degree} · Out: ${node.out_degree}</div>
+        <div style="color:var(--muted); margin-top:4px;">File Slice: <strong>${node.file_path}:L${node.start_line}-L${node.end_line}</strong> (${Math.max(1, node.end_line - node.start_line + 1)} lines)</div>
+        <div style="color:var(--muted);">PageRank Score: <strong>${node.pagerank}</strong> · Incoming (In): <strong>${node.in_degree}</strong> · Outgoing (Out): <strong>${node.out_degree}</strong></div>
         <code>${node.signature}</code>
         <div style="margin-top:9px; font-size:0.78rem;">
-          <div><strong>Connected Incoming (${callers.length}):</strong></div>
+          <div><strong>Incoming Callers / Defined In (${callers.length}):</strong></div>
           <div class="pill-list">${callerPills}</div>
-          <div style="margin-top:6px;"><strong>Connected Outgoing (${callees.length}):</strong></div>
+          <div style="margin-top:6px;"><strong>Outgoing Callees / Dependencies (${callees.length}):</strong></div>
           <div class="pill-list">${calleePills}</div>
         </div>
       `;
