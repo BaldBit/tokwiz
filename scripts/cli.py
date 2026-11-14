@@ -335,7 +335,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             "  init [--agent all|...]  Configure TokWiz skills, hooks, and project graph\n"
             "  predict <prompt>        Forecast workflow tokens, blast radius, and $ cost\n"
             "  graph <build|query>     Build or query the Tier 2 Tree-Sitter PageRank graph\n"
-            "  skeleton <file>         Extract compact AST signature skeleton with line numbers\n"
+            "  slice <symbol>          One-shot AST definition + caller snippet bundler\n"
+            "  skeleton <file>         Extract compact AST/data skeleton with line numbers\n"
+            "  test [files...]         Run graph-impacted tests with 1-line pass receipt\n"
+            "  checkpoint              Generate <200-token working memory snapshot\n"
             "  filter [-- <cmd>]       Compress noisy test, build, and git shell outputs\n"
             "  stats [--session|--days N]  Display token savings & Forecast-vs-Real cost report\n"
             "  verify-ab [--json]      Verify head-to-head A/B savings from real IDE transcripts\n"
@@ -355,9 +358,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     if cmd == "graph":
         mod = _load_script_module("project_graph", "project-graph.py")
         return int(mod.main(rest))
+    if cmd == "slice":
+        mod = _load_script_module("project_graph", "project-graph.py")
+        return int(mod.main(["slice", *rest]))
     if cmd == "skeleton":
         mod = _load_script_module("code_skeletonizer", "code-skeletonizer.py")
         return int(mod.main(rest))
+    if cmd == "test":
+        mod = _load_script_module("workspace_ops", "workspace-ops.py")
+        return int(mod.main_test(rest))
+    if cmd == "checkpoint":
+        mod = _load_script_module("workspace_ops", "workspace-ops.py")
+        return int(mod.main_checkpoint(rest))
     if cmd == "filter":
         mod = _load_script_module("output_filter", "output-filter.py")
         return int(mod.main(rest))

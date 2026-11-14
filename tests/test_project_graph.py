@@ -242,6 +242,36 @@ class TestProjectGraphAndSkeletonizer(unittest.TestCase):
         self.assertEqual(fourth["deleted_files"], 1)
         self.assertEqual(fourth["total_files"], 6)
 
+    def test_one_shot_slice_bundler_and_structured_skeletons(self) -> None:
+        import json
+
+        graph = graph_mod.ProjectGraph(self.root)
+        graph.build()
+        sliced = graph.slice_code("validateToken", max_tokens=500)
+        self.assertIn("[TokWiz Code Slice: validateToken", sliced.formatted_slice)
+        self.assertIn("--- DEF", sliced.formatted_slice)
+        self.assertLessEqual(sliced.token_count, 500)
+
+        # Structured JSON/YAML/TOML/SQL skeletonization
+        json_file = self.root / "config.json"
+        json_file.write_text(
+            json.dumps({"service": "api", "items": [{"id": i, "name": f"item_{i}"} for i in range(60)]}, indent=2),
+            encoding="utf-8",
+        )
+        json_skel = skel_mod.skeletonize_file(json_file, root_dir=self.root)
+        self.assertIn("Structured Skeleton: config.json", json_skel)
+        self.assertIn("similar entries omitted", json_skel)
+
+        sql_file = self.root / "schema.sql"
+        sql_file.write_text(
+            "CREATE TABLE users (\n  id INT PRIMARY KEY,\n  email TEXT NOT NULL\n);\n"
+            + "\n".join(f"INSERT INTO users VALUES ({i}, 'u{i}@example.com');" for i in range(40)),
+            encoding="utf-8",
+        )
+        sql_skel = skel_mod.skeletonize_file(sql_file, root_dir=self.root)
+        self.assertIn("CREATE TABLE users", sql_skel)
+        self.assertIn("similar INSERT rows omitted", sql_skel)
+
 
 if __name__ == "__main__":
     unittest.main()

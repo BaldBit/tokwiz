@@ -42,7 +42,14 @@ EXT_TO_LANG = {
     ".cpp": "cpp",
     ".hpp": "cpp",
     ".cs": "csharp",
+    ".json": "json",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".toml": "toml",
+    ".sql": "sql",
 }
+
+STRUCTURED_DATA_EXTS = {".json", ".yaml", ".yml", ".toml", ".sql"}
 
 
 @dataclass
@@ -678,11 +685,169 @@ def render_skeleton(
     return "\n".join(lines_out)
 
 
+def _compact_json_value(value: object, depth: int = 0) -> object:
+    if depth >= 4:
+        if isinstance(value, dict):
+            return {f"... ({len(value)} keys)": "..."}
+        if isinstance(value, list):
+            return [f"... ({len(value)} items)"]
+    if isinstance(value, dict):
+        items = list(value.items())
+        out = {}
+        for k, v in items[:25]:
+            out[k] = _compact_json_value(v, depth + 1)
+        if len(items) > 25:
+            out["..."] = f"+{len(items) - 25} more keys omitted"
+        return out
+    if isinstance(value, list):
+        if len(value) <= 2:
+            return [_compact_json_value(v, depth + 1) for v in value]
+        return [
+            _compact_json_value(value[0], depth + 1),
+            _compact_json_value(value[1], depth + 1),
+            f"... +{len(value) - 2} similar entries omitted",
+        ]
+    if isinstance(value, str) and len(value) > 120:
+        return value[:117] + "..."
+    return value
+
+
+def _summarize_json(source: str, rel_path: str) -> str:
+    lines = source.splitlines()
+    header = f"# [TokWiz Structured Skeleton: {rel_path} ({len(lines)} lines, json)]"
+    try:
+        parsed = json.loads(source)
+        compacted = _compact_json_value(parsed, 0)
+        body = json.dumps(compacted, indent=2, ensure_ascii=False)
+        return f"{header}\n{body}"
+    except Exception:
+        preview = "\n".join(f"L{i + 1}: {ln}" for i, ln in enumerate(lines[:25]))
+        omitted = max(0, len(lines) - 25)
+        tail = f"\n# ... +{omitted} lines omitted" if omitted else ""
+        return f"{header}\n{preview}{tail}"
+
+
+def _summarize_yaml_or_toml(source: str, rel_path: str, language: str) -> str:
+    lines = source.splitlines()
+    out: List[str] = [
+        f"# [TokWiz Structured Skeleton: {rel_path} ({len(lines)} lines, {language})]"
+    ]
+    list_run = 0
+    list_indent = -1
+    for idx, raw in enumerate(lines, 1):
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = len(raw) - len(raw.lstrip(" \t"))
+        is_list_item = stripped.startswith("- ")
+        if is_list_item:
+            if indent == list_indent:
+                list_run += 1
+            else:
+                if list_run > 2:
+                    out.append(f"{' ' * list_indent}# ... +{list_run - 2} similar entries omitted")
+                list_indent = indent
+                list_run = 1
+            if list_run <= 2:
+                out.append(f"L{idx}: {raw[:140]}")
+        else:
+            if list_run > 2:
+                out.append(f"{' ' * max(0, list_indent)}# ... +{list_run - 2} similar entries omitted")
+            list_run = 0
+            list_indent = -1
+            if indent <= 4 or stripped.startswith("["):
+                out.append(f"L{idx}: {raw[:140]}")
+    if list_run > 2:
+        out.append(f"{' ' * max(0, list_indent)}# ... +{list_run - 2} similar entries omitted")
+    return "\n".join(out)
+
+
+def _summarize_sql(source: str, rel_path: str) -> str:
+    lines = source.splitlines()
+    out: List[str] = [
+        f"# [TokWiz Structured Skeleton: {rel_path} ({len(lines)} lines, sql)]"
+    ]
+    ddl_re = re.compile(
+        r"^\s*(?:CREATE|ALTER|DROP)\s+(?:OR\s+REPLACE\s+)?(?:TABLE|INDEX|VIEW|FUNCTION|TRIGGER|TYPE|SCHEMA)\b",
+        re.IGNORECASE,
+    )
+    in_ddl = False
+    insert_run = 0
+    for idx, raw in enumerate(lines, 1):
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("--"):
+            continue
+        if ddl_re.match(stripped):
+            if insert_run > 1:
+                out.append(f"-- ... +{insert_run - 1} similar INSERT rows omitted")
+            insert_run = 0
+            in_ddl = True
+            out.append(f"L{idx}: {raw[:140]}")
+            if stripped.endswith(";"):
+                in_ddl = False
+        elif in_ddl:
+            out.append(f"L{idx}: {raw[:140]}")
+            if stripped.endswith(";"):
+                in_ddl = False
+        elif stripped.upper().startswith("INSERT INTO"):
+            insert_run += 1
+            if insert_run == 1:
+                out.append(f"L{idx}: {raw[:140]}")
+        elif stripped.startswith("(") and insert_run >= 1:
+            insert_run += 1
+            if insert_run <= 2:
+                out.append(f"L{idx}: {raw[:140]}")
+    if insert_run > 2:
+        out.append(f"-- ... +{insert_run - 2} similar INSERT rows omitted")
+    if len(out) == 1:
+        for idx, raw in enumerate(lines[:20], 1):
+            out.append(f"L{idx}: {raw[:140]}")
+        if len(lines) > 20:
+            out.append(f"-- ... +{len(lines) - 20} lines omitted")
+    return "\n".join(out)
+
+
+def _cap_skeleton_tokens(text: str, max_tokens: Optional[int]) -> str:
+    if max_tokens is None or max_tokens <= 0:
+        return text
+    capped: List[str] = []
+    used = 0
+    for line in text.splitlines():
+        t = estimate_tokens(line + "\n")
+        if used + t > max_tokens and capped:
+            capped.append(f"# ... [truncated at {max_tokens} token budget]")
+            break
+        capped.append(line)
+        used += t
+    return "\n".join(capped)
+
+
 def skeletonize_file(
     file_path: Path | str,
     root_dir: Optional[Path] = None,
     max_tokens: Optional[int] = None,
 ) -> str:
+    path_obj = Path(file_path)
+    ext = path_obj.suffix.lower()
+    if ext in STRUCTURED_DATA_EXTS:
+        rel_path = (
+            str(path_obj.relative_to(root_dir))
+            if root_dir and path_obj.is_relative_to(root_dir)
+            else str(path_obj)
+        )
+        try:
+            source = path_obj.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            return f"# [TokWiz Structured Skeleton: {rel_path} (unreadable)]"
+        if ext == ".json":
+            rendered = _summarize_json(source, rel_path)
+        elif ext in (".yaml", ".yml", ".toml"):
+            lang = "yaml" if ext in (".yaml", ".yml") else "toml"
+            rendered = _summarize_yaml_or_toml(source, rel_path, lang)
+        else:
+            rendered = _summarize_sql(source, rel_path)
+        return _cap_skeleton_tokens(rendered, max_tokens)
+
     parsed = parse_source_file(file_path, root_dir=root_dir)
     return render_skeleton(parsed, max_tokens=max_tokens)
 
@@ -717,7 +882,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         }
         print(json.dumps(payload, indent=2))
     else:
-        print(render_skeleton(parsed, max_tokens=args.max_tokens))
+        print(skeletonize_file(target, max_tokens=args.max_tokens))
     return 0
 
 

@@ -644,6 +644,118 @@ class ProjectGraph:
         final_str = f"[TokWiz Graph Slice: {query_text} ({tok_count} tokens)]\n{body_str}"
         return final_str, estimate_tokens(final_str)
 
+    def _read_lines_cached(self, rel_path: str, cache: Dict[str, List[str]]) -> List[str]:
+        if rel_path in cache:
+            return cache[rel_path]
+        target = self.root_dir / rel_path
+        try:
+            lines = target.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            lines = []
+        cache[rel_path] = lines
+        return lines
+
+    def slice_code(
+        self,
+        query_text: str,
+        max_tokens: int = 600,
+        auto_build: bool = True,
+    ) -> GraphSliceResult:
+        """Bundle exact AST definition lines and caller call-site snippets in one shot."""
+        t0 = time.perf_counter()
+        res = self.query(query_text, max_tokens=max_tokens, auto_build=auto_build)
+        if not res.matched_symbols:
+            return res
+
+        file_cache: Dict[str, List[str]] = {}
+        sections: List[str] = []
+        header_reserve = 22
+        budget = max(60, max_tokens - header_reserve)
+        used_tokens = 0
+
+        # 1. Include exact definition bodies for top matched symbols
+        for sym in res.matched_symbols[:2]:
+            rel_path = str(sym["file_path"])
+            lines = self._read_lines_cached(rel_path, file_cache)
+            if not lines:
+                continue
+            start_l = max(1, int(sym["start_line"]))
+            end_l = min(len(lines), int(sym["end_line"]))
+            block_header = f"--- DEF {rel_path}:L{start_l}-L{end_l} {sym['name']} ---"
+            block_lines = [block_header]
+            for ln in range(start_l, end_l + 1):
+                block_lines.append(f"{ln}: {lines[ln - 1]}")
+
+            added_lines: List[str] = []
+            for bl in block_lines:
+                t = estimate_tokens(bl + "\n")
+                if used_tokens + t > budget and added_lines:
+                    added_lines.append("... (truncated to max_tokens)")
+                    break
+                added_lines.append(bl)
+                used_tokens += t
+            sections.append("\n".join(added_lines))
+            if used_tokens >= budget:
+                break
+
+        # 2. Include concise caller call-site snippets if budget remains
+        primary_names = [str(s["name"]) for s in res.matched_symbols if s.get("name")]
+        if used_tokens < budget and res.callers and primary_names:
+            for caller in res.callers[:4]:
+                if used_tokens >= budget:
+                    break
+                rel_path = str(caller["file_path"])
+                lines = self._read_lines_cached(rel_path, file_cache)
+                if not lines:
+                    continue
+                c_start = max(1, int(caller["start_line"]))
+                c_end = min(len(lines), int(caller["end_line"]))
+                hit_lines: List[int] = []
+                for ln in range(c_start, c_end + 1):
+                    text_l = lines[ln - 1]
+                    if any(name in text_l for name in primary_names):
+                        hit_lines.append(ln)
+                if not hit_lines:
+                    hit_lines = [c_start]
+
+                snippet_lines = [f"--- CALLER {rel_path}:L{c_start}-L{c_end} {caller['name']} ---"]
+                seen_ln = set()
+                for h in hit_lines[:2]:
+                    for ln in range(max(c_start, h - 1), min(c_end, h + 1) + 1):
+                        if ln not in seen_ln:
+                            seen_ln.add(ln)
+                            snippet_lines.append(f"{ln}: {lines[ln - 1]}")
+                block_text = "\n".join(snippet_lines)
+                t = estimate_tokens(block_text + "\n")
+                if used_tokens + t <= budget:
+                    sections.append(block_text)
+                    used_tokens += t
+
+        # 3. Append compact callee index if budget still has room
+        if used_tokens < budget and res.callees:
+            callee_hdr = "CALLEES: " + ", ".join(
+                f"{c['name']} ({c['file_path']}:L{c['start_line']})" for c in res.callees[:5]
+            )
+            if used_tokens + estimate_tokens(callee_hdr + "\n") <= budget:
+                sections.append(callee_hdr)
+
+        body_str = "\n".join(sections) if sections else res.formatted_slice
+        prelim = f"[TokWiz Code Slice: {query_text} (000 tokens)]\n{body_str}"
+        tok_count = min(max_tokens, estimate_tokens(prelim))
+        final_str = f"[TokWiz Code Slice: {query_text} ({tok_count} tokens)]\n{body_str}"
+        elapsed_ms = round(res.elapsed_ms + (time.perf_counter() - t0) * 1000.0, 2)
+        return GraphSliceResult(
+            query=res.query,
+            matched_symbols=res.matched_symbols,
+            impacted_files=res.impacted_files,
+            callers=res.callers,
+            callees=res.callees,
+            total_lines_in_radius=res.total_lines_in_radius,
+            formatted_slice=final_str,
+            token_count=estimate_tokens(final_str),
+            elapsed_ms=elapsed_ms,
+        )
+
     def export_graph_data(self, max_nodes: int = 120, auto_build: bool = True) -> Dict[str, object]:
         """Export nodes, edges, PageRank scores, and structural stats for the web visualizer."""
         if auto_build:
@@ -761,10 +873,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     p_query = sub.add_parser("query", help="Query symbol neighborhood slice using PageRank")
     p_query.add_argument("query_text", help="Symbol name or prompt keywords")
     p_query.add_argument("--max-tokens", type=int, default=400, help="Maximum tokens in slice (default: 400)")
+    p_query.add_argument("--with-code", action="store_true", help="Bundle matched AST body + caller snippets")
     p_query.add_argument("--json", action="store_true", help="Output JSON slice")
 
+    p_slice = sub.add_parser("slice", help="One-shot AST definition + caller snippet bundler")
+    p_slice.add_argument("query_text", help="Symbol name or prompt keywords")
+    p_slice.add_argument("--root", dest="slice_root", default=None, help="Repository root directory")
+    p_slice.add_argument("--max-tokens", type=int, default=600, help="Maximum tokens in code slice (default: 600)")
+    p_slice.add_argument("--json", action="store_true", help="Output JSON slice")
+
     args = parser.parse_args(argv)
-    graph = ProjectGraph(root_dir=Path(args.root))
+    effective_root = getattr(args, "slice_root", None) or args.root
+    graph = ProjectGraph(root_dir=Path(effective_root))
 
     if args.subcommand == "build":
         stats = graph.build(force=args.force)
@@ -778,8 +898,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             )
         return 0
 
-    if args.subcommand == "query":
-        res = graph.query(args.query_text, max_tokens=args.max_tokens)
+    if args.subcommand in ("query", "slice"):
+        if args.subcommand == "slice" or getattr(args, "with_code", False):
+            res = graph.slice_code(args.query_text, max_tokens=args.max_tokens)
+        else:
+            res = graph.query(args.query_text, max_tokens=args.max_tokens)
         if args.json:
             print(
                 json.dumps(

@@ -144,6 +144,59 @@ class TestToolGuardrailsAndOutputFilter(unittest.TestCase):
         self.assertIn("[TokWiz Filter: omitted 3 diff lines for package-lock.json]", filtered)
         self.assertIn("+export const version = 2;", filtered)
 
+    def test_structured_data_150_line_interception_and_session_read_dedup(self) -> None:
+        # 1. >150-line JSON file must be intercepted with structured skeleton
+        big_json = self.root / "data.json"
+        big_json.write_text(
+            "{\n" + ",\n".join(f'  "k_{i}": {i}' for i in range(170)) + "\n}\n",
+            encoding="utf-8",
+        )
+        res_json = guard_mod.handle_pre_tool_use(
+            {"tool_name": "read_file", "tool_input": {"Path": str(big_json)}, "cwd": str(self.root)},
+            default_root=self.root,
+        )
+        self.assertEqual(res_json["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertIn(">150-line unbounded read limit", res_json["hookSpecificOutput"]["permissionDecisionReason"])
+
+        # 2. Session File-Read Deduplicator: first read allowed, second identical read cached, edit invalidates
+        small_py = self.root / "helper.py"
+        small_py.write_text("def add(a, b):\n    return a + b\n", encoding="utf-8")
+        first = guard_mod.handle_pre_tool_use(
+            {
+                "tool_name": "read_file",
+                "tool_input": {"Path": str(small_py), "StartLine": 1, "EndLine": 2},
+                "cwd": str(self.root),
+                "session_id": "sess-dedup",
+            },
+            default_root=self.root,
+        )
+        self.assertEqual(first["hookSpecificOutput"]["permissionDecision"], "allow")
+
+        second = guard_mod.handle_pre_tool_use(
+            {
+                "tool_name": "read_file",
+                "tool_input": {"Path": str(small_py), "StartLine": 1, "EndLine": 2},
+                "cwd": str(self.root),
+                "session_id": "sess-dedup",
+            },
+            default_root=self.root,
+        )
+        self.assertEqual(second["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertIn("[TokWiz Cache Hit]", second["hookSpecificOutput"]["permissionDecisionReason"])
+
+        # Modify file -> SHA-1 changes -> fresh read must be allowed
+        small_py.write_text("def add(a, b):\n    return a + b + 1\n", encoding="utf-8")
+        third = guard_mod.handle_pre_tool_use(
+            {
+                "tool_name": "read_file",
+                "tool_input": {"Path": str(small_py), "StartLine": 1, "EndLine": 2},
+                "cwd": str(self.root),
+                "session_id": "sess-dedup",
+            },
+            default_root=self.root,
+        )
+        self.assertEqual(third["hookSpecificOutput"]["permissionDecision"], "allow")
+
 
 if __name__ == "__main__":
     unittest.main()

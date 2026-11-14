@@ -394,6 +394,49 @@ class TestEndToEndCLIAndResilience(unittest.TestCase):
             shutil.rmtree(demo_ws, ignore_errors=True)
             shutil.rmtree(fake_brain, ignore_errors=True)
 
+    def test_phase5_slice_test_and_checkpoint_cli(self) -> None:
+        ws = Path(tempfile.mkdtemp(prefix="tokwiz_phase5_"))
+        try:
+            (ws / "app.py").write_text("def greet(name: str) -> str:\n    return f'hi {name}'\n", encoding="utf-8")
+            (ws / "tests").mkdir()
+            (ws / "tests" / "test_app.py").write_text(
+                "import unittest\nfrom app import greet\n\nclass T(unittest.TestCase):\n"
+                "    def test_greet(self):\n        self.assertEqual(greet('x'), 'hi x')\n",
+                encoding="utf-8",
+            )
+            # Run `tokwiz slice`
+            s_proc = subprocess.run(
+                [sys.executable, str(SCRIPTS_DIR / "cli.py"), "slice", "greet", "--root", str(ws)],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("[TokWiz Code Slice: greet", s_proc.stdout)
+            self.assertIn("def greet", s_proc.stdout)
+
+            # Run `tokwiz test`
+            t_proc = subprocess.run(
+                [sys.executable, str(SCRIPTS_DIR / "cli.py"), "test", "--root", str(ws), "--all"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("1/1 impacted tests passed", t_proc.stdout)
+
+            # Run `tokwiz checkpoint`
+            c_proc = subprocess.run(
+                [sys.executable, str(SCRIPTS_DIR / "cli.py"), "checkpoint", "--root", str(ws)],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("# TokWiz Checkpoint", c_proc.stdout)
+            self.assertIn("PASS (1/1", c_proc.stdout)
+            self.assertTrue((ws / ".tokwiz" / "checkpoint.md").exists())
+            self.assertLess(len(c_proc.stdout.split()), 200)
+        finally:
+            shutil.rmtree(ws, ignore_errors=True)
+
 
 if __name__ == "__main__":
     unittest.main()
