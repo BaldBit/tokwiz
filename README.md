@@ -2,7 +2,7 @@
 
 > *Think efficiently. Forecast ahead. Use fewer tokens.*
 
-**TokWiz** is a cross-agent token optimization layer, Tier 2 Tree-Sitter/PageRank codebase graph, pre-prompt cost forecaster, and anti-wastage guardrail suite for **Claude Code**, **OpenAI Codex CLI**, **Google Gemini CLI / Antigravity**, **Cursor**, and **GitHub Copilot**.
+**TokWiz** is an intelligent, cross-agent token optimization layer, Tier 2 Tree-Sitter/PageRank codebase graph, pre-prompt cost forecaster, anti-wastage guardrail suite, and usage analytics dashboard for **Claude Code**, **OpenAI Codex CLI**, **Google Gemini CLI / Antigravity**, **Cursor**, and **GitHub Copilot**.
 
 ## Quickstart
 
@@ -21,6 +21,15 @@ python3 scripts/cli.py graph query validateToken --max-tokens 400
 
 # Extract compact AST signature skeleton with exact line numbers
 python3 scripts/cli.py skeleton scripts/project-graph.py
+
+# View terminal token savings & Forecast-vs-Real Cost MAPE report
+python3 scripts/cli.py stats
+
+# Launch interactive local web analytics dashboard
+python3 scripts/cli.py dashboard --port 8420
+
+# Run paired A/B evaluation benchmarks
+python3 scripts/cli.py benchmark
 ```
 
 ## CLI Commands
@@ -32,5 +41,8 @@ python3 scripts/cli.py skeleton scripts/project-graph.py
 | `tokwiz graph <build\|query>` | Builds or queries the SQLite Personalized PageRank symbol graph |
 | `tokwiz skeleton <file>` | Outputs compact AST signatures with `Lstart-Lend` coordinates |
 | `tokwiz filter [-- <cmd>]` | Strips ANSI, progress bars, passing test noise, and lockfile diffs |
+| `tokwiz stats [--session \| --days N]` | Terminal report of Net Tokens Saved, Forecast vs. Real Cost ($\Delta C$), and MAPE |
+| `tokwiz dashboard [--port 8420]` | Launches the interactive local web analytics dashboard |
+| `tokwiz benchmark [--json]` | Runs the 6-scenario paired A/B evaluation suite |
 | `tokwiz level <1\|2\|3\|auto>` | Sets optimization aggressiveness profile |
 | `tokwiz budget --max-prompt-cost <usd>` | Sets per-prompt forecasted cost alert/gate threshold |

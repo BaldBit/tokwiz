@@ -239,6 +239,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             "  filter [-- <cmd>]       Compress noisy test, build, and git shell outputs\n"
             "  stats [--session|--days N]  Display token savings & Forecast-vs-Real cost report\n"
             "  dashboard [--port 8420] Launch interactive local analytics web dashboard\n"
+            "  benchmark [--json]      Run paired A/B token savings & MAPE benchmark suite\n"
             "  level <1|2|3|auto>      Configure optimization level\n"
             "  budget --max-prompt-cost <usd>  Configure prompt cost threshold"
         )
@@ -269,6 +270,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         assert spec and spec.loader
         mod = importlib.util.module_from_spec(spec)
         sys.modules["dashboard_server"] = mod
+        spec.loader.exec_module(mod)
+        return int(mod.main(rest))
+    if cmd == "benchmark":
+        spec = importlib.util.spec_from_file_location(
+            "run_benchmark", _REPO_ROOT / "evaluations" / "run-benchmark.py"
+        )
+        assert spec and spec.loader
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["run_benchmark"] = mod
         spec.loader.exec_module(mod)
         return int(mod.main(rest))
     if cmd == "level":

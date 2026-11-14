@@ -1,0 +1,126 @@
+{
+  "version": "1.0",
+  "skill_overhead_tokens": 290,
+  "scenarios": [
+    {
+      "id": "large_codebase_navigation",
+      "name": "1. Large Codebase Navigation",
+      "category": "navigation",
+      "prompt": "Locate validateToken definition, all callers, and verifySignature implementation across the repository",
+      "target_reduction_min_pct": 60.0,
+      "target_reduction_max_pct": 85.0,
+      "target_quality_min_pct": 98.0,
+      "baseline_simulation": {
+        "grep_find_turns": 6,
+        "full_files_read_lines": 1450,
+        "unfiltered_tool_tokens": 9200,
+        "reasoning_tokens": 1400,
+        "output_tokens": 420
+      },
+      "tokwiz_simulation": {
+        "graph_query_tokens": 180,
+        "ranged_read_lines": 85,
+        "filtered_tool_tokens": 520,
+        "reasoning_tokens": 540,
+        "output_tokens": 260,
+        "quality_score_pct": 99.2
+      }
+    },
+    {
+      "id": "multi_file_feature_refactor",
+      "name": "2. Multi-File Feature / Refactor",
+      "category": "refactor",
+      "prompt": "Refactor validateToken to accept optional API key headers and update requireAuth and handleLogin callers",
+      "target_reduction_min_pct": 35.0,
+      "target_reduction_max_pct": 85.0,
+      "target_quality_min_pct": 95.0,
+      "baseline_simulation": {
+        "grep_find_turns": 5,
+        "full_files_read_lines": 1100,
+        "unfiltered_tool_tokens": 6800,
+        "reasoning_tokens": 1650,
+        "output_tokens": 680
+      },
+      "tokwiz_simulation": {
+        "graph_query_tokens": 240,
+        "ranged_read_lines": 160,
+        "filtered_tool_tokens": 1450,
+        "reasoning_tokens": 920,
+        "output_tokens": 460,
+        "quality_score_pct": 97.5
+      }
+    },
+    {
+      "id": "long_conversation_session",
+      "name": "3. Long Conversation Session (20+ turns)",
+      "category": "session",
+      "prompt": "Iterative 20-turn feature implementation with checkpoint compaction and KV-cache prefix hygiene",
+      "target_reduction_min_pct": 40.0,
+      "target_reduction_max_pct": 80.0,
+      "target_quality_min_pct": 95.0,
+      "baseline_simulation": {
+        "grep_find_turns": 18,
+        "full_files_read_lines": 4200,
+        "unfiltered_tool_tokens": 28000,
+        "reasoning_tokens": 6400,
+        "output_tokens": 3800
+      },
+      "tokwiz_simulation": {
+        "graph_query_tokens": 680,
+        "ranged_read_lines": 620,
+        "filtered_tool_tokens": 7200,
+        "reasoning_tokens": 3400,
+        "output_tokens": 2400,
+        "quality_score_pct": 96.8
+      }
+    },
+    {
+      "id": "failing_test_build_triage",
+      "name": "4. Failing Test / Build Triage",
+      "category": "debugging",
+      "prompt": "Fix failing pytest test_expired_token assertion error and triage stack trace",
+      "target_reduction_min_pct": 50.0,
+      "target_reduction_max_pct": 90.0,
+      "target_quality_min_pct": 98.0,
+      "baseline_simulation": {
+        "grep_find_turns": 4,
+        "full_files_read_lines": 900,
+        "unfiltered_tool_tokens": 11400,
+        "reasoning_tokens": 1500,
+        "output_tokens": 510
+      },
+      "tokwiz_simulation": {
+        "graph_query_tokens": 190,
+        "ranged_read_lines": 95,
+        "filtered_tool_tokens": 820,
+        "reasoning_tokens": 680,
+        "output_tokens": 310,
+        "quality_score_pct": 99.0
+      }
+    },
+    {
+      "id": "technical_research_docs_analysis",
+      "name": "5. Technical Research & Docs Analysis",
+      "category": "research",
+      "prompt": "Analyze project architecture and summarize authentication and billing module boundaries",
+      "target_reduction_min_pct": 35.0,
+      "target_reduction_max_pct": 85.0,
+      "target_quality_min_pct": 95.0,
+      "baseline_simulation": {
+        "grep_find_turns": 5,
+        "full_files_read_lines": 1250,
+        "unfiltered_tool_tokens": 5600,
+        "reasoning_tokens": 1200,
+        "output_tokens": 620
+      },
+      "tokwiz_simulation": {
+        "graph_query_tokens": 260,
+        "ranged_read_lines": 140,
+        "filtered_tool_tokens": 1150,
+        "reasoning_tokens": 720,
+        "output_tokens": 390,
+        "quality_score_pct": 96.5
+      }
+    }
+  ]
+}
