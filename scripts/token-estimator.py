@@ -11,8 +11,10 @@ import argparse
 import importlib.util
 import json
 import math
+import os
 import re
 import sys
+import time
 import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -182,6 +184,19 @@ def load_pricing_matrix(pricing_path: Optional[Path] = None) -> Dict[str, object
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _safe_resolve(path_val: Path | str) -> Path:
+    try:
+        return Path(path_val).resolve()
+    except FileNotFoundError:
+        pwd_env = os.environ.get("PWD")
+        if pwd_env and os.path.isdir(pwd_env):
+            os.chdir(pwd_env)
+            p = Path(path_val)
+            return p.resolve() if p.is_absolute() else (Path(pwd_env) / p).resolve()
+        os.chdir(str(_REPO_ROOT))
+        return _REPO_ROOT
+
+
 class TokenEstimator:
     """Forecasts multi-step workflow tokens and cross-provider cost."""
 
@@ -191,7 +206,7 @@ class TokenEstimator:
         pricing_path: Optional[Path] = None,
         graph: Optional[ProjectGraph] = None,
     ) -> None:
-        self.root_dir = Path(root_dir).resolve()
+        self.root_dir = _safe_resolve(root_dir)
         self.pricing = load_pricing_matrix(pricing_path)
         self.graph = graph or ProjectGraph(self.root_dir)
         self.calibration = self._load_calibration()
@@ -223,10 +238,19 @@ class TokenEstimator:
             "refactor", "implement", "feature", "support", "across", "update",
             "integrate", "add", "redesign", "extract", "rename",
         }
-        qa_starters = ("what ", "why ", "how ", "explain ", "describe ", "where is ")
+        qa_starters = (
+            "what ", "why ", "how ", "explain ", "describe ", "where is ",
+            "trace ", "show ", "list ", "which ",
+        )
         edit_terms = {"edit", "change", "modify", "patch", "function", "method", "typo"}
 
         impacted_count = len(graph_slice.impacted_files)
+
+        # Profile A: Direct Q&A / Trace / Explanation (checked first when no write/edit/debug/audit verbs exist)
+        if (p_low.startswith(qa_starters) or p_low.endswith("?")) and not (
+            word_set & (refactor_terms | edit_terms | debug_terms | {"audit", "migrate"})
+        ):
+            return PROFILES["A"]
 
         # Profile D: Debugging / Test Triage
         if word_set & debug_terms and ("test" in word_set or "error" in word_set or "fix" in word_set or "bug" in word_set):
@@ -236,10 +260,6 @@ class TokenEstimator:
         # Profile E: Repo-Wide Exploration / Architecture
         if len(word_set & repo_wide_terms) >= 2 or impacted_count >= 6:
             return PROFILES["E"]
-
-        # Profile A: Direct Q&A / Explanation (when no edit/refactor verbs are present)
-        if (p_low.startswith(qa_starters) or p_low.endswith("?")) and not (word_set & (refactor_terms | edit_terms | debug_terms)):
-            return PROFILES["A"]
 
         # Profile C: Multi-File Feature / Refactor
         if impacted_count >= 2 or ("refactor" in word_set) or ("tests" in word_set and (word_set & refactor_terms)):
@@ -260,9 +280,12 @@ class TokenEstimator:
         graph_slice = self.graph.query(prompt, max_tokens=400, auto_build=True)
         profile = self.classify_prompt(prompt, graph_slice)
 
-        opt_level = forced_level if forced_level in (1, 2, 3) else profile.optimization_level
-        if len(graph_slice.impacted_files) > 2 or context_tokens > 25000:
-            opt_level = max(opt_level, 2)
+        if profile.code == "A":
+            opt_level = forced_level if forced_level in (1, 2, 3) else 1
+        else:
+            opt_level = forced_level if forced_level in (1, 2, 3) else profile.optimization_level
+            if len(graph_slice.impacted_files) > 2 or context_tokens > 25000:
+                opt_level = max(opt_level, 2)
 
         # Apply optional calibration multipliers
         step_mult = float(
@@ -274,18 +297,36 @@ class TokenEstimator:
         reason_mult = float(
             self.calibration.get("reasoning_multipliers", {}).get(profile.code, 1.0)  # type: ignore[union-attr]
         )
-        n_steps = max(profile.min_steps, min(profile.max_steps, round(profile.default_steps * step_mult)))
+        if profile.code == "A" and len(graph_slice.matched_symbols) > 0:
+            base_steps = min(2, max(1, (len(graph_slice.matched_symbols) + 1) // 2))
+            n_steps = max(1, round(base_steps * step_mult))
+        else:
+            n_steps = max(profile.min_steps, min(profile.max_steps, round(profile.default_steps * step_mult)))
 
         prompt_tok = count_tokens(prompt)
         blast_files = max(1, len(graph_slice.impacted_files)) if profile.code != "A" else len(graph_slice.impacted_files)
         blast_lines = graph_slice.total_lines_in_radius or (blast_files * 40)
+
+        # Measure real token sizes of impacted files on disk for graph-grounded estimation
+        actual_full_file_tokens = 0
+        for rel_f in graph_slice.impacted_files:
+            fp = self.root_dir / rel_f
+            if fp.is_file():
+                try:
+                    actual_full_file_tokens += count_tokens(fp.read_text(encoding="utf-8", errors="replace"))
+                except Exception:
+                    actual_full_file_tokens += 400
+            else:
+                actual_full_file_tokens += 400
+
         blast_line_tokens = max(80, blast_lines * 6) if blast_files > 0 else 0
 
-        # Multi-step Workflow Prediction Formula:
+        # Multi-step Workflow Prediction Formula grounded in real symbol/file sizes:
         # Total = T_context + T_prompt + sum_{i=1..N}(T_context,i + T_tool_in,i + T_tool_out,i) + T_reasoning + T_output
         level_compression = {1: 1.0, 2: 0.85, 3: 0.68}[opt_level]
+        max_slice_cap = 160 if profile.code == "A" else 360
         per_step_tool_out = int(
-            (profile.avg_tool_out_tokens + min(400, blast_line_tokens // max(1, n_steps)))
+            (profile.avg_tool_out_tokens + min(max_slice_cap, blast_line_tokens // max(1, n_steps)))
             * level_compression
             * tool_mult
         )
@@ -303,10 +344,14 @@ class TokenEstimator:
 
         total_tokens = context_tokens + prompt_tok + tool_loop_tokens + reasoning_tokens + output_tokens
 
-        # Unoptimized baseline (blind grep/find + full file reads + unfiltered test logs)
+        # Unoptimized baseline grounded in full file reads + blind grep/test loops
         unopt_steps = profile.unoptimized_steps + max(0, blast_files - 1) * 2
+        per_step_unopt_out = max(
+            profile.unoptimized_tool_out_tokens,
+            actual_full_file_tokens // max(1, blast_files) if actual_full_file_tokens > 0 else profile.unoptimized_tool_out_tokens,
+        )
         unopt_loop_tokens = unopt_steps * (
-            context_tokens + prompt_tok + 160 + profile.unoptimized_tool_out_tokens + (blast_files * 350)
+            context_tokens + prompt_tok + 140 + min(2400, per_step_unopt_out) + (blast_files * 180)
         )
         unopt_output = int(profile.base_output_tokens * 1.45)
         unopt_reasoning = int(reasoning_tokens * 1.7)
@@ -320,6 +365,7 @@ class TokenEstimator:
             reasoning_tokens=reasoning_tokens,
             output_tokens=output_tokens,
             unoptimized_tokens=unoptimized_tokens,
+            profile_code=profile.code,
         )
 
         matched_names = [str(s["name"]) for s in graph_slice.matched_symbols]
@@ -358,9 +404,11 @@ class TokenEstimator:
         reasoning_tokens: int,
         output_tokens: int,
         unoptimized_tokens: int,
+        profile_code: str = "B",
     ) -> Dict[str, ModelCostEstimate]:
         models_cfg: Dict[str, Dict[str, object]] = self.pricing.get("models", {})  # type: ignore[assignment]
         per_unit = float(self.pricing.get("per_tokens", 1_000_000))
+        scale_factors: Dict[str, float] = self.calibration.get("cost_scale_factors", {})  # type: ignore[assignment]
         estimates: Dict[str, ModelCostEstimate] = {}
 
         for model_id, m in models_cfg.items():
@@ -368,13 +416,14 @@ class TokenEstimator:
             cached_rate = float(m["cached_input_per_1m"]) / per_unit
             out_rate = float(m["output_per_1m"]) / per_unit
             r_mult = float(m.get("reasoning_multiplier", 1.0))
+            c_scale = float(scale_factors.get(f"{model_id}:{profile_code}", 1.0)) if isinstance(scale_factors, dict) else 1.0
 
             effective_out = output_tokens + int(reasoning_tokens * r_mult)
-            uncached_usd = (input_tokens * in_rate) + (effective_out * out_rate)
+            uncached_usd = ((input_tokens * in_rate) + (effective_out * out_rate)) * c_scale
             # Assume 80% of input + tool loop context hits KV cache when cache hygiene is active
             cached_input_part = int(input_tokens * 0.80)
             fresh_input_part = input_tokens - cached_input_part
-            cached_usd = (fresh_input_part * in_rate) + (cached_input_part * cached_rate) + (effective_out * out_rate)
+            cached_usd = ((fresh_input_part * in_rate) + (cached_input_part * cached_rate) + (effective_out * out_rate)) * c_scale
 
             unopt_in = int(unoptimized_tokens * 0.82)
             unopt_out = unoptimized_tokens - unopt_in
@@ -420,6 +469,38 @@ class TokenEstimator:
         ]
         return "\n".join(lines)
 
+    def record_forecast(self, res: ForecastResult) -> None:
+        """Persist forecast to `.tokwiz/active-forecast.json` and `.tokwiz/forecasts.jsonl`."""
+        tokwiz_dir = self.root_dir / ".tokwiz"
+        tokwiz_dir.mkdir(parents=True, exist_ok=True)
+        d = asdict(res)
+        record = {
+            "forecast_id": d["forecast_id"],
+            "timestamp": time.time(),
+            "prompt": d["prompt"],
+            "profile_code": d["profile_code"],
+            "profile_name": d["profile_name"],
+            "optimization_level": d["optimization_level"],
+            "estimated_steps": d["estimated_steps"],
+            "blast_radius_files": d["blast_radius_files"],
+            "blast_radius_lines": d["blast_radius_lines"],
+            "prompt_tokens": d["prompt_tokens"],
+            "context_tokens": d["context_tokens"],
+            "tool_loop_tokens": d["tool_loop_tokens"],
+            "reasoning_tokens": d["reasoning_tokens"],
+            "output_tokens": d["output_tokens"],
+            "total_tokens": d["total_tokens"],
+            "unoptimized_tokens": d["unoptimized_tokens"],
+            "savings_tokens": d["savings_tokens"],
+            "savings_pct": d["savings_pct"],
+            "costs": d["costs"],
+        }
+        (tokwiz_dir / "active-forecast.json").write_text(
+            json.dumps(record, indent=2) + "\n", encoding="utf-8"
+        )
+        with open(tokwiz_dir / "forecasts.jsonl", "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record) + "\n")
+
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
@@ -430,6 +511,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--root", default=".", help="Repository root directory")
     parser.add_argument("--context-tokens", type=int, default=450, help="Existing conversation context tokens")
     parser.add_argument("--level", type=int, choices=[1, 2, 3], default=None, help="Force optimization level")
+    parser.add_argument("--no-record", action="store_true", help="Do not persist forecast to .tokwiz/forecasts.jsonl")
     parser.add_argument("--json", action="store_true", help="Output full JSON forecast")
     args = parser.parse_args(argv)
 
@@ -439,6 +521,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         context_tokens=args.context_tokens,
         forced_level=args.level,
     )
+    if not args.no_record:
+        estimator.record_forecast(res)
 
     if args.json:
         payload = asdict(res)

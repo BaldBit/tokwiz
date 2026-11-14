@@ -103,8 +103,10 @@ jobs:
           print(f"Bumped version: {current_ver} -> {next_ver}")
           EOF
 
-      - name: Build Python Distribution Artifacts (sdist & wheel)
-        run: python -m build
+      - name: Build Python Distribution & Standalone Release Bundles
+        run: |
+          python -m build
+          python3 scripts/build-bundle.py
 
       - name: Commit Version Bump & Push Tag
         run: |

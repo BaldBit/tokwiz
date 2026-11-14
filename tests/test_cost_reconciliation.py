@@ -230,10 +230,17 @@ class TestCostReconciliationAndCalibration(unittest.TestCase):
                 self.assertEqual(api_data["total_turns"], 1)
                 self.assertEqual(api_data["turns"][0]["forecast_id"], "tw_testdash")
 
+            with urlopen(f"http://127.0.0.1:{port}/api/graph") as resp_graph:
+                self.assertEqual(resp_graph.status, 200)
+                graph_data = json.loads(resp_graph.read().decode("utf-8"))
+                self.assertGreaterEqual(graph_data["total_nodes"], 2)
+                self.assertIn("nodes", graph_data)
+                self.assertIn("edges", graph_data)
+
             with urlopen(f"http://127.0.0.1:{port}/") as resp_html:
                 self.assertEqual(resp_html.status, 200)
                 html = resp_html.read().decode("utf-8")
-                self.assertIn("TokWiz Optimization & Cost Analytics", html)
+                self.assertIn("Interactive Project Graph", html)
         finally:
             server.shutdown()
             server.server_close()

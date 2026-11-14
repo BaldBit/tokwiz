@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -12,6 +13,27 @@ from typing import Dict, List, Optional, Set
 
 _SCRIPTS_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = _SCRIPTS_DIR.parent
+
+
+def _ensure_valid_cwd() -> Path:
+    """Recover if the user's shell CWD inode was recreated (e.g. after a folder reset)."""
+    try:
+        return Path(os.getcwd()).resolve()
+    except FileNotFoundError:
+        pwd_env = os.environ.get("PWD")
+        if pwd_env and os.path.isdir(pwd_env):
+            os.chdir(pwd_env)
+            return Path(pwd_env).resolve()
+        os.chdir(str(_REPO_ROOT))
+        return _REPO_ROOT
+
+
+def _resolve_root(root_arg: str) -> Path:
+    cwd = _ensure_valid_cwd()
+    if not root_arg or root_arg == ".":
+        return cwd
+    p = Path(root_arg)
+    return p.resolve() if p.is_absolute() else (cwd / p).resolve()
 
 
 def _load_script_module(name: str, filename: str):
@@ -33,6 +55,17 @@ def _ensure_line_in_file(file_path: Path, line_to_ensure: str) -> None:
         file_path.write_text(f"{content}{sep}{line_to_ensure}\n", encoding="utf-8")
     else:
         file_path.write_text(f"{line_to_ensure}\n", encoding="utf-8")
+
+
+def _merge_hook_list(existing_list: object, new_entry: Dict[str, object], script_marker: str) -> List[Dict[str, object]]:
+    """Non-destructively append or update a TokWiz hook entry while preserving existing user hooks."""
+    preserved: List[Dict[str, object]] = []
+    if isinstance(existing_list, list):
+        for item in existing_list:
+            if isinstance(item, dict) and script_marker not in json.dumps(item):
+                preserved.append(item)
+    preserved.append(new_entry)
+    return preserved
 
 
 def _parse_agents(agent_arg: str) -> Set[str]:
@@ -68,8 +101,8 @@ def _cmd_init(argv: List[str]) -> int:
         print(f"Error: No valid agents specified in '{args.agent}'", file=sys.stderr)
         return 1
 
-    target_root = Path(args.root).resolve()
-    base_dir = Path(args.home).resolve() if (args.is_global and args.home) else (
+    target_root = _resolve_root(args.root)
+    base_dir = _resolve_root(args.home) if (args.is_global and args.home) else (
         Path.home() if args.is_global else target_root
     )
 
@@ -109,18 +142,24 @@ def _cmd_init(argv: List[str]) -> int:
                 settings = {}
         hooks_cfg = settings.setdefault("hooks", {})
         if isinstance(hooks_cfg, dict):
-            hooks_cfg["UserPromptSubmit"] = [
-                {"matcher": ".*", "hooks": [{"type": "command", "command": pre_prompt_cmd}]}
-            ]
-            hooks_cfg["PreToolUse"] = [
+            hooks_cfg["UserPromptSubmit"] = _merge_hook_list(
+                hooks_cfg.get("UserPromptSubmit"),
+                {"matcher": ".*", "hooks": [{"type": "command", "command": pre_prompt_cmd}]},
+                "pre-prompt-predict.py",
+            )
+            hooks_cfg["PreToolUse"] = _merge_hook_list(
+                hooks_cfg.get("PreToolUse"),
                 {
                     "matcher": "Read|read_file|view_file|Bash|run_command",
                     "hooks": [{"type": "command", "command": pre_tool_cmd}],
-                }
-            ]
-            hooks_cfg["Stop"] = [
-                {"matcher": ".*", "hooks": [{"type": "command", "command": post_turn_cmd}]}
-            ]
+                },
+                "pre-tool-guard.py",
+            )
+            hooks_cfg["Stop"] = _merge_hook_list(
+                hooks_cfg.get("Stop"),
+                {"matcher": ".*", "hooks": [{"type": "command", "command": post_turn_cmd}]},
+                "post-turn-record.py",
+            )
         settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
         _ensure_line_in_file(
             base_dir / "CLAUDE.md",
@@ -139,20 +178,33 @@ def _cmd_init(argv: List[str]) -> int:
         shutil.copyfile(_REPO_ROOT / "adapters" / "gemini" / "GEMINI.md", gem_rule)
 
         hooks_json_path = base_dir / ".agents" / "hooks.json"
-        hooks_payload = {
-            "hooks": {
-                "PreInvocation": [{"matcher": ".*", "command": pre_prompt_cmd, "timeout": 5}],
-                "PreToolUse": [
-                    {
-                        "matcher": "read_file|view_file|Read|run_command|Bash",
-                        "command": pre_tool_cmd,
-                        "timeout": 5,
-                    }
-                ],
-                "PostInvocation": [{"matcher": ".*", "command": post_turn_cmd, "timeout": 5}],
-                "Stop": [{"matcher": ".*", "command": post_turn_cmd, "timeout": 5}],
-            }
-        }
+        hooks_payload: Dict[str, object] = {}
+        if hooks_json_path.exists():
+            try:
+                hooks_payload = json.loads(hooks_json_path.read_text(encoding="utf-8"))
+            except Exception:
+                hooks_payload = {}
+        gem_hooks = hooks_payload.setdefault("hooks", {})
+        if isinstance(gem_hooks, dict):
+            gem_hooks["PreInvocation"] = _merge_hook_list(
+                gem_hooks.get("PreInvocation"),
+                {"matcher": ".*", "command": pre_prompt_cmd, "timeout": 5},
+                "pre-prompt-predict.py",
+            )
+            gem_hooks["PreToolUse"] = _merge_hook_list(
+                gem_hooks.get("PreToolUse"),
+                {
+                    "matcher": "read_file|view_file|Read|run_command|Bash",
+                    "command": pre_tool_cmd,
+                    "timeout": 5,
+                },
+                "pre-tool-guard.py",
+            )
+            gem_hooks["Stop"] = _merge_hook_list(
+                gem_hooks.get("Stop"),
+                {"matcher": ".*", "command": post_turn_cmd, "timeout": 5},
+                "post-turn-record.py",
+            )
         hooks_json_path.write_text(json.dumps(hooks_payload, indent=2) + "\n", encoding="utf-8")
         _ensure_line_in_file(base_dir / "GEMINI.md", rule_line)
         configured.append("gemini")
@@ -187,7 +239,7 @@ def _cmd_level(argv: List[str]) -> int:
     parser.add_argument("--root", default=".", help="Repository root")
     args = parser.parse_args(argv)
 
-    cfg_dir = Path(args.root).resolve() / ".tokwiz"
+    cfg_dir = _resolve_root(args.root) / ".tokwiz"
     cfg_dir.mkdir(parents=True, exist_ok=True)
     cfg_file = cfg_dir / "config.json"
     cfg = {}
@@ -209,7 +261,7 @@ def _cmd_budget(argv: List[str]) -> int:
     parser.add_argument("--root", default=".", help="Repository root")
     args = parser.parse_args(argv)
 
-    cfg_dir = Path(args.root).resolve() / ".tokwiz"
+    cfg_dir = _resolve_root(args.root) / ".tokwiz"
     cfg_dir.mkdir(parents=True, exist_ok=True)
     cfg_file = cfg_dir / "config.json"
     cfg = {}
@@ -226,7 +278,55 @@ def _cmd_budget(argv: List[str]) -> int:
     return 0
 
 
+def _cmd_verify_ab(argv: List[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="tokwiz verify-ab",
+        description="Verify head-to-head A/B token savings and test equivalence from real IDE session transcripts.",
+    )
+    parser.add_argument("--tokwiz", default=None, help="Path to TokWiz workspace (default: current dir or ../tokwiz-ab-demo/project-tokwiz)")
+    parser.add_argument("--baseline", default=None, help="Path to Baseline workspace (default: sibling project-baseline)")
+    parser.add_argument("--no-tests", action="store_true", help="Skip running unittest verification in both workspaces")
+    parser.add_argument("--json", action="store_true", help="Output full JSON verification report")
+    args = parser.parse_args(argv)
+
+    cwd = _ensure_valid_cwd()
+    if args.tokwiz:
+        t_root = _resolve_root(args.tokwiz)
+    elif (cwd / ".tokwiz").exists() and cwd.name == "project-tokwiz":
+        t_root = cwd
+    elif (_REPO_ROOT.parent / "tokwiz-ab-demo" / "project-tokwiz").exists():
+        t_root = (_REPO_ROOT.parent / "tokwiz-ab-demo" / "project-tokwiz").resolve()
+    else:
+        t_root = cwd
+
+    if args.baseline:
+        b_root = _resolve_root(args.baseline)
+    else:
+        b_root = (t_root.parent / "project-baseline").resolve()
+
+    spec = importlib.util.spec_from_file_location(
+        "post_turn_record", _REPO_ROOT / "hooks" / "post-turn-record.py"
+    )
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["post_turn_record"] = mod
+    spec.loader.exec_module(mod)
+
+    mod.sync_workspace_transcript_turns(t_root)
+    report = mod.build_ab_comparison_report(
+        baseline_root=b_root,
+        tokwiz_root=t_root,
+        run_tests=not args.no_tests,
+    )
+    if args.json:
+        print(json.dumps(report, indent=2))
+    else:
+        print(mod.render_ab_comparison_cli(report))
+    return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
+    _ensure_valid_cwd()
     args_list = list(sys.argv[1:] if argv is None else argv)
     if not args_list or args_list[0] in ("-h", "--help"):
         print(
@@ -238,6 +338,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             "  skeleton <file>         Extract compact AST signature skeleton with line numbers\n"
             "  filter [-- <cmd>]       Compress noisy test, build, and git shell outputs\n"
             "  stats [--session|--days N]  Display token savings & Forecast-vs-Real cost report\n"
+            "  verify-ab [--json]      Verify head-to-head A/B savings from real IDE transcripts\n"
             "  dashboard [--port 8420] Launch interactive local analytics web dashboard\n"
             "  benchmark [--json]      Run paired A/B token savings & MAPE benchmark suite\n"
             "  level <1|2|3|auto>      Configure optimization level\n"
@@ -263,6 +364,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     if cmd == "stats":
         mod = _load_script_module("telemetry", "telemetry.py")
         return int(mod.main(rest))
+    if cmd == "verify-ab":
+        return _cmd_verify_ab(rest)
     if cmd == "dashboard":
         spec = importlib.util.spec_from_file_location(
             "dashboard_server", _REPO_ROOT / "dashboard" / "server.py"

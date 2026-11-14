@@ -163,18 +163,23 @@ def attribute_variance_causes(
     f_steps = max(1, int(forecast.get("estimated_steps", 1)))
     f_tool = max(1, int(forecast.get("tool_loop_tokens", 200)))
     f_reason = max(1, int(forecast.get("reasoning_tokens", 100)))
+    f_total = max(1, int(forecast.get("total_tokens", 1000)))
 
-    if usage.real_steps > f_steps + 1 and usage.real_steps >= int(f_steps * 1.35):
+    if (
+        usage.real_steps > f_steps + 2
+        and usage.real_steps >= int(f_steps * 1.4)
+        and usage.total_tokens > int(f_total * 1.15)
+    ):
         tags.append("EXTRA_TOOL_LOOPS")
 
     cache_ratio = usage.cached_input_tokens / max(1, usage.input_tokens)
     if usage.input_tokens > 500 and cache_ratio < 0.45:
         tags.append("CACHE_MISS_DRIFT")
 
-    if usage.reasoning_tokens > f_reason * 1.5 and (usage.reasoning_tokens - f_reason) > 150:
+    if usage.reasoning_tokens > f_reason * 1.5 and (usage.reasoning_tokens - f_reason) > 200 and usage.total_tokens > int(f_total * 1.15):
         tags.append("REASONING_SPIKE")
 
-    if usage.tool_output_tokens > f_tool * 1.5 and (usage.tool_output_tokens - f_tool) > 300:
+    if usage.tool_output_tokens > f_tool * 1.5 and (usage.tool_output_tokens - f_tool) > 300 and usage.total_tokens > int(f_total * 1.15):
         tags.append("UNBOUNDED_TOOL_OUTPUT")
 
     if not tags:
@@ -234,24 +239,55 @@ class CalibrationEngine:
             base_f_cost = 0.005
             unopt_cost = 0.015
 
-        # Apply learned cost scale factor for this (model, profile) if present
+        # Preserve the exact forecast tokens and cost that were predicted pre-prompt
+        # (learned EMA multipliers in calibration.json are applied by TokenEstimator on future forecasts)
         scale_key = f"{usage.model_id}:{profile_code}"
         scale_map: Dict[str, float] = weights.setdefault("cost_scale_factors", {})  # type: ignore[assignment]
-        cost_scale = float(scale_map.get(scale_key, 1.0))
 
-        f_total_tok = int(round(int(forecast.get("total_tokens", 1000)) * cost_scale))
-        f_cost = round(base_f_cost * cost_scale, 6)
+        f_total_tok = int(forecast.get("total_tokens", 1000))
+        f_cost = round(base_f_cost, 6)
         r_cost = compute_real_cost_usd(usage, self.pricing)
 
         f_in_tok = int(forecast.get("context_tokens", 0)) + int(forecast.get("prompt_tokens", 0)) + int(forecast.get("tool_loop_tokens", 0))
         f_tool_tok = int(forecast.get("tool_loop_tokens", 0))
         f_reason_tok = int(forecast.get("reasoning_tokens", 0))
         f_out_tok = int(forecast.get("output_tokens", 0))
-        unopt_tok = int(forecast.get("unoptimized_tokens", max(f_total_tok * 2, usage.total_tokens + 1000)))
 
-        # Net Savings = Estimated Unoptimized Baseline - (Actual Workflow Tokens + TokWiz Skill/Graph Tokens)
-        net_saved_tok = max(0, unopt_tok - (usage.total_tokens + skill_overhead_tokens))
-        net_saved_cost = round(max(0.0, unopt_cost - r_cost), 6)
+        telemetry_source = str(usage_payload.get("telemetry_source", "API_EXACT"))
+        transcript_path = str(usage_payload.get("transcript_path", ""))
+        raw_receipts = usage_payload.get("receipts")
+
+        ab_base_tok = int(usage_payload.get("real_baseline_tokens", 0))
+        ab_base_steps = int(usage_payload.get("real_baseline_steps", 0))
+        ab_base_cost = float(usage_payload.get("real_baseline_cost_usd", 0.0))
+
+        models_cfg: Dict[str, Dict[str, object]] = self.pricing.get("models", {})  # type: ignore[assignment]
+        per_unit = float(self.pricing.get("per_tokens", 1_000_000))
+        m_cfg = models_cfg.get(usage.model_id) or models_cfg.get("claude-sonnet-4") or {}
+        in_rate = float(m_cfg.get("input_per_1m", 3.0)) / per_unit
+        cached_rate = float(m_cfg.get("cached_input_per_1m", 0.3)) / per_unit
+        blended_in_rate = (0.35 * in_rate) + (0.65 * cached_rate)
+
+        if isinstance(raw_receipts, list):
+            receipts: List[Dict[str, object]] = [r for r in raw_receipts if isinstance(r, dict)]
+            net_saved_tok = sum(max(0, int(r.get("saved_tokens", 0))) for r in receipts)
+            unopt_tok = usage.total_tokens + net_saved_tok
+            net_saved_cost = round(net_saved_tok * blended_in_rate, 6)
+            unopt_cost = round(r_cost + net_saved_cost, 6)
+        else:
+            unopt_tok = int(forecast.get("unoptimized_tokens", max(f_total_tok * 2, usage.total_tokens + 1000)))
+            net_saved_tok = max(0, unopt_tok - (usage.total_tokens + skill_overhead_tokens))
+            net_saved_cost = round(max(0.0, unopt_cost - r_cost), 6)
+            receipts = [
+                {
+                    "type": "WORKFLOW_COMPRESSION",
+                    "target": "session_turn",
+                    "full_tokens": unopt_tok,
+                    "actual_tokens": usage.total_tokens,
+                    "saved_tokens": net_saved_tok,
+                    "detail": f"Workflow context & tool output compression ({usage.total_tokens:,} tok vs {unopt_tok:,} tok)",
+                }
+            ]
 
         token_delta = usage.total_tokens - f_total_tok
         cost_delta = round(r_cost - f_cost, 6)
@@ -290,6 +326,12 @@ class CalibrationEngine:
             "cost_delta_usd": cost_delta,
             "ape_pct": ape_pct,
             "variance_tags": variance_tags,
+            "telemetry_source": telemetry_source,
+            "transcript_path": transcript_path,
+            "receipts": receipts,
+            "ab_baseline_tokens": ab_base_tok,
+            "ab_baseline_steps": ab_base_steps,
+            "ab_baseline_cost_usd": ab_base_cost,
         }
 
         self.telemetry.record_turn(record)

@@ -3,15 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TokWiz — Token Optimization & Cost Variance Dashboard</title>
+  <title>TokWiz — Codebase Graph & Real-Time Cost Analytics</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <style>
     :root {
-      color-scheme: dark light;
-      --bg: #0b0f17;
-      --card: #131b2e;
-      --border: #23304d;
-      --text: #e6edf7;
-      --muted: #8ea0c0;
+      color-scheme: dark;
+      --bg: #070b12;
+      --card: #0e1525;
+      --card-alt: #090e1a;
+      --border: #1e2c47;
+      --text: #eef2ff;
+      --muted: #8b9dc3;
       --accent: #38bdf8;
       --emerald: #34d399;
       --amber: #fbbf24;
@@ -21,10 +23,12 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
-      background: var(--bg);
+      background: radial-gradient(circle at 50% 0%, #111c35 0%, var(--bg) 65%);
       color: var(--text);
-      padding: 24px 32px;
+      padding: 22px 28px;
       line-height: 1.5;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
     }
     header {
       display: flex;
@@ -32,165 +36,579 @@
       align-items: center;
       flex-wrap: wrap;
       gap: 16px;
-      margin-bottom: 24px;
-      padding-bottom: 16px;
+      margin-bottom: 18px;
+      padding-bottom: 14px;
       border-bottom: 1px solid var(--border);
     }
-    header h1 { font-size: 1.45rem; font-weight: 700; letter-spacing: -0.02em; }
-    header p { color: var(--muted); font-size: 0.9rem; }
-    .controls { display: flex; gap: 10px; align-items: center; }
-    button {
+    .title-group { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    header h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.02em; }
+    .mode-badge {
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.74rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .mode-badge.live {
+      background: rgba(52, 211, 153, 0.16);
+      color: var(--emerald);
+      border: 1px solid rgba(52, 211, 153, 0.4);
+    }
+    .mode-badge.demo {
+      background: rgba(251, 191, 36, 0.18);
+      color: var(--amber);
+      border: 1px solid rgba(251, 191, 36, 0.45);
+    }
+    header p { color: var(--muted); font-size: 0.86rem; margin-top: 2px; }
+    .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    button, input[type="search"], select {
       background: var(--card);
       color: var(--text);
       border: 1px solid var(--border);
-      padding: 8px 14px;
+      padding: 7px 13px;
       border-radius: 8px;
-      cursor: pointer;
-      font-size: 0.85rem;
+      font-size: 0.82rem;
       font-weight: 600;
+      transition: border-color 0.15s, background 0.15s;
     }
-    button:hover { border-color: var(--accent); }
+    button { cursor: pointer; }
+    button:hover, button.active {
+      border-color: var(--accent);
+      background: rgba(56, 189, 248, 0.12);
+      color: var(--accent);
+    }
+
     .kpi-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-      gap: 16px;
-      margin-bottom: 24px;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 14px;
+      margin-bottom: 20px;
     }
     .kpi-card {
-      background: var(--card);
+      background: rgba(14, 21, 37, 0.88);
       border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 18px 20px;
+      padding: 15px 18px;
     }
-    .kpi-label { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
-    .kpi-value { font-size: 1.65rem; font-weight: 700; margin: 6px 0 4px; font-variant-numeric: tabular-nums; }
-    .kpi-sub { font-size: 0.82rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .kpi-label { font-size: 0.73rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+    .kpi-value { font-size: 1.55rem; font-weight: 700; margin: 5px 0 3px; font-variant-numeric: tabular-nums; }
+    .kpi-sub { font-size: 0.78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+    /* Project Graph Visualizer Section */
+    .graph-section {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px 20px;
+      margin-bottom: 22px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+    }
+    .graph-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .graph-header h2 { font-size: 1.05rem; font-weight: 700; }
+    .graph-layout {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 16px;
+      align-items: stretch;
+    }
+    @media (max-width: 1080px) {
+      .graph-layout { grid-template-columns: 1fr; }
+    }
+    .graph-stage {
+      background: radial-gradient(circle at 50% 50%, #101b33 0%, #060911 100%);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      position: relative;
+      overflow: hidden;
+      min-height: 600px;
+      height: 100%;
+    }
+    #projectGraphCanvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: grab;
+      user-select: none;
+    }
+    #projectGraphCanvas:active { cursor: grabbing; }
+    .graph-hud-top {
+      position: absolute;
+      top: 12px;
+      left: 14px;
+      display: flex;
+      gap: 8px;
+      pointer-events: none;
+      font-size: 0.76rem;
+      color: var(--muted);
+      background: rgba(7, 11, 18, 0.85);
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    .graph-zoom-controls {
+      position: absolute;
+      top: 12px;
+      right: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .graph-zoom-controls button {
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      display: grid;
+      place-items: center;
+      font-size: 1.05rem;
+      background: rgba(14, 21, 37, 0.92);
+    }
+    .graph-legend {
+      position: absolute;
+      bottom: 12px;
+      left: 14px;
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      background: rgba(7, 11, 18, 0.88);
+      padding: 7px 14px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      font-size: 0.76rem;
+      color: var(--text);
+    }
+    .legend-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .graph-sidebar {
+      background: var(--card-alt);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 10px;
+      min-height: 600px;
+      height: 100%;
+    }
+    .graph-sidebar h3 {
+      font-size: 0.84rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--accent);
+    }
+    .sidebar-hint {
+      font-size: 0.74rem;
+      color: var(--muted);
+      margin-top: 2px;
+      margin-bottom: 6px;
+      line-height: 1.4;
+    }
+    .hubs-chart-wrap {
+      position: relative;
+      flex: 1 1 190px;
+      min-height: 185px;
+      width: 100%;
+    }
+    .inspector-box {
+      font-size: 0.82rem;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 13px;
+      line-height: 1.55;
+    }
+    .inspector-box code {
+      display: block;
+      margin-top: 7px;
+      padding: 7px 9px;
+      background: #050811;
+      border: 1px solid #192540;
+      border-radius: 6px;
+      color: var(--emerald);
+      font-size: 0.76rem;
+      word-break: break-all;
+    }
+    .pill-list { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+    .pill {
+      font-size: 0.73rem;
+      padding: 2px 8px;
+      border-radius: 6px;
+      background: rgba(56, 189, 248, 0.13);
+      color: var(--accent);
+      cursor: pointer;
+      border: 1px solid rgba(56, 189, 248, 0.25);
+    }
+    .pill:hover { background: rgba(56, 189, 248, 0.26); }
+
+    /* Sleek 2x2 Analytics Charts Grid */
     .charts-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
-      gap: 20px;
-      margin-bottom: 24px;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 18px;
+      margin-bottom: 22px;
+    }
+    @media (max-width: 1100px) {
+      .charts-grid { grid-template-columns: 1fr; }
     }
     .chart-card {
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 18px 20px;
+      border-radius: 14px;
+      padding: 18px 22px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    }
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 12px;
     }
     .chart-card h2 {
-      font-size: 0.95rem;
+      font-size: 0.96rem;
       font-weight: 600;
-      margin-bottom: 12px;
       color: var(--text);
     }
-    canvas { width: 100%; height: 230px; display: block; }
+    .chart-subtitle {
+      font-size: 0.76rem;
+      color: var(--muted);
+    }
+    .chart-viewport {
+      position: relative;
+      height: 270px;
+      width: 100%;
+    }
+    .chart-empty-overlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      place-items: center;
+      text-align: center;
+      padding: 20px;
+      color: var(--muted);
+      font-size: 0.84rem;
+      background: rgba(9, 14, 26, 0.72);
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+    }
+
     .table-card {
       background: var(--card);
       border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 18px 20px;
+      border-radius: 14px;
+      padding: 18px 22px;
       overflow-x: auto;
     }
-    .table-card h2 { font-size: 1rem; margin-bottom: 12px; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+    .table-card h2 { font-size: 0.98rem; margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.83rem; font-variant-numeric: tabular-nums; }
     th, td {
       padding: 10px 12px;
       text-align: left;
       border-bottom: 1px solid var(--border);
     }
-    th { color: var(--muted); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; }
+    th { color: var(--muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; }
+    .empty-state {
+      text-align: center;
+      padding: 28px 16px;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
     .tag {
       display: inline-block;
       padding: 2px 8px;
       border-radius: 999px;
-      font-size: 0.72rem;
+      font-size: 0.71rem;
       font-weight: 600;
       background: rgba(56, 189, 248, 0.15);
       color: var(--accent);
       margin-right: 4px;
     }
     .tag.ON_TARGET { background: rgba(52, 211, 153, 0.16); color: var(--emerald); }
+    .tag.PENDING_FORECAST { background: rgba(167, 139, 250, 0.18); color: var(--violet); }
     .tag.EXTRA_TOOL_LOOPS, .tag.REASONING_SPIKE, .tag.CACHE_MISS_DRIFT, .tag.UNBOUNDED_TOOL_OUTPUT {
       background: rgba(251, 191, 36, 0.16);
       color: var(--amber);
+    }
+    .source-badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 6px;
+      font-size: 0.68rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      background: rgba(56, 189, 248, 0.14);
+      color: var(--accent);
+      border: 1px solid rgba(56, 189, 248, 0.28);
+    }
+    .source-badge.TRANSCRIPT_MEASURED {
+      background: rgba(52, 211, 153, 0.14);
+      color: var(--emerald);
+      border-color: rgba(52, 211, 153, 0.3);
+    }
+    .receipt-btn {
+      margin-left: 7px;
+      padding: 2px 8px;
+      font-size: 0.71rem;
+      border-radius: 6px;
+      border: 1px solid rgba(52, 211, 153, 0.35);
+      background: rgba(52, 211, 153, 0.1);
+      color: var(--emerald);
+      cursor: pointer;
+    }
+    .receipt-btn:hover { background: rgba(52, 211, 153, 0.22); }
+    .receipt-drawer-row td {
+      background: #070b14;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    .receipt-list {
+      display: grid;
+      gap: 7px;
+      font-size: 0.79rem;
+    }
+    .receipt-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 7px 11px;
+      border-radius: 8px;
+      background: rgba(17, 25, 43, 0.85);
+      border: 1px solid var(--border);
+    }
+    .receipt-type {
+      font-size: 0.69rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(167, 139, 250, 0.16);
+      color: var(--violet);
+      margin-right: 8px;
+    }
+    .ab-proof-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-bottom: 12px;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+    .ab-proof-meta code {
+      color: var(--accent);
+      background: #060a12;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
     }
   </style>
 </head>
 <body>
   <header>
     <div>
-      <h1>⚡ TokWiz Optimization & Cost Analytics</h1>
-      <p>Forecasted Cost vs. Real Billed Cost Reconciliation · Self-Calibration · Guardrail Telemetry</p>
+      <div class="title-group">
+        <h1>⚡ TokWiz Codebase Graph & Cost Analytics</h1>
+        <span id="modeBadge" class="mode-badge live">● Live Workspace Telemetry</span>
+      </div>
+      <p>Interactive AST + PageRank Symbol Graph · Pre-Prompt Cost Forecasting · Real Billed Cost Reconciliation</p>
     </div>
     <div class="controls">
-      <button id="refreshBtn" type="button">Refresh Live Telemetry</button>
-      <button id="demoBtn" type="button">Load Sample Session</button>
+      <button id="liveBtn" type="button" class="active">Live Workspace Data</button>
+      <button id="demoBtn" type="button">Preview Sample Session</button>
     </div>
   </header>
 
   <section class="kpi-grid" aria-label="Key Performance Indicators">
     <div class="kpi-card">
-      <div class="kpi-label">Total Tokens Saved</div>
+      <div class="kpi-label">Net Tokens Saved</div>
       <div class="kpi-value" id="kpiTokensSaved">0</div>
-      <div class="kpi-sub" id="kpiTokensSub">Net of skill/graph overhead</div>
+      <div class="kpi-sub" id="kpiTokensSub">0 reconciled turns · 0 guardrail intercepts</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-label">Net $ Saved</div>
       <div class="kpi-value" id="kpiCostSaved" style="color: var(--emerald);">$0.0000</div>
-      <div class="kpi-sub" id="kpiSpentSub">Real Spent: $0.0000</div>
+      <div class="kpi-sub" id="kpiSpentSub">Real Spent: $0.0000 · Forecast: $0.0000</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-label">Forecast vs. Real (ΔC & MAPE)</div>
-      <div class="kpi-value" id="kpiMape">0.0%</div>
-      <div class="kpi-sub" id="kpiDeltaSub">ΔC: $0.0000 · Target ≤ 20%</div>
+      <div class="kpi-value" id="kpiMape">—</div>
+      <div class="kpi-sub" id="kpiDeltaSub">Run a prompt to measure ΔC & MAPE %</div>
     </div>
     <div class="kpi-card">
       <div class="kpi-label">Avg Token Reduction %</div>
       <div class="kpi-value" id="kpiReduction" style="color: var(--accent);">0.0%</div>
-      <div class="kpi-sub" id="kpiTurnsSub">Across 0 turns</div>
+      <div class="kpi-sub" id="kpiTurnsSub">0 turns recorded in telemetry.db</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">KV Prompt Cache Hit %</div>
-      <div class="kpi-value" id="kpiCacheHit" style="color: var(--violet);">0.0%</div>
-      <div class="kpi-sub">Cached Input / Total Input</div>
+      <div class="kpi-label">Project Graph Index</div>
+      <div class="kpi-value" id="kpiGraphNodes" style="color: var(--violet);">0 nodes</div>
+      <div class="kpi-sub" id="kpiGraphSub">0 files · 0 edges (Live SQLite index)</div>
     </div>
   </section>
 
+  <!-- Interactive Project Graph Visualizer -->
+  <section class="graph-section" aria-label="Interactive Project Graph Visualizer">
+    <div class="graph-header">
+      <div>
+        <h2>🌐 Interactive Project Graph (Drag to Rotate · Scroll to Zoom · Click Node to Inspect)</h2>
+      </div>
+      <div class="controls">
+        <input type="search" id="graphSearchInput" placeholder="Search function, class, or file..." />
+        <select id="edgeFilterSelect" aria-label="Filter Edges">
+          <option value="ALL">All Edges (CALLS + DEFINES + IMPORTS)</option>
+          <option value="CALLS">CALLS / INHERITS Only</option>
+          <option value="DEFINES">DEFINES Only</option>
+          <option value="IMPORTS">IMPORTS Only</option>
+        </select>
+        <button id="autoRotateBtn" type="button">Auto-Orbit: OFF</button>
+        <button id="resetCameraBtn" type="button">Reset View</button>
+      </div>
+    </div>
+
+    <div class="graph-layout">
+      <div class="graph-stage" id="graphStage">
+        <canvas id="projectGraphCanvas"></canvas>
+        <div class="graph-hud-top">
+          <span>🖱️ Drag: Rotate Graph · Scroll: Zoom · Click Node: Inspect Symbol & 1-Hop Callers/Callees</span>
+        </div>
+        <div class="graph-zoom-controls">
+          <button id="zoomInBtn" type="button" title="Zoom In">+</button>
+          <button id="zoomOutBtn" type="button" title="Zoom Out">−</button>
+        </div>
+        <div class="graph-legend">
+          <span><i class="legend-dot" style="background:#38bdf8"></i>File Hub</span>
+          <span><i class="legend-dot" style="background:#a78bfa"></i>Class / Interface</span>
+          <span><i class="legend-dot" style="background:#34d399"></i>Function</span>
+          <span><i class="legend-dot" style="background:#fbbf24"></i>Method</span>
+        </div>
+      </div>
+
+      <aside class="graph-sidebar">
+        <div>
+          <h3>Symbol Inspector</h3>
+          <p class="sidebar-hint">Exact line slice, signature, and 1-hop callers/callees TokWiz feeds the AI instead of reading whole files.</p>
+          <div class="inspector-box" id="nodeInspector">
+            Click any node in the graph (or search above) to inspect its exact <code>file:Lstart-Lend</code> range, PageRank score, callers, and callees.
+          </div>
+        </div>
+        <div style="display:flex; flex-direction:column; flex:1; min-height:220px;">
+          <h3 style="margin-top:4px;">Top PageRank Symbol Hubs</h3>
+          <p class="sidebar-hint">Most heavily connected architectural hubs ranked by Personalized PageRank centrality.</p>
+          <div class="hubs-chart-wrap">
+            <canvas id="hubsChartCanvas"></canvas>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- Sleek Chart.js Analytics Charts with Full X & Y Axes -->
   <section class="charts-grid" aria-label="Analytics Charts">
     <div class="chart-card">
-      <h2>Forecasted Cost vs. Real Billed Cost per Prompt (Dual-Line & Residual Error)</h2>
-      <canvas id="costVarianceCanvas" width="600" height="230"></canvas>
+      <div class="chart-header">
+        <h2>Forecasted Cost vs. Real Billed Cost per Prompt</h2>
+        <span class="chart-subtitle">Dual-Line & Residual Error (ΔC in $ USD)</span>
+      </div>
+      <div class="chart-viewport">
+        <canvas id="costVarianceCanvas"></canvas>
+        <div class="chart-empty-overlay" id="costVarianceEmpty">
+          No reconciled turns yet — run a prompt in this workspace (or click "Preview Sample Session" above) to chart Forecast vs. Real $.
+        </div>
+      </div>
     </div>
+
     <div class="chart-card">
-      <h2>Baseline Unoptimized vs. Real TokWiz Token Usage Over Time</h2>
-      <canvas id="tokensTimelineCanvas" width="600" height="230"></canvas>
+      <div class="chart-header">
+        <h2>Unoptimized Baseline vs. TokWiz Workflow Tokens</h2>
+        <span class="chart-subtitle">Per-Turn Token Consumption Comparison</span>
+      </div>
+      <div class="chart-viewport">
+        <canvas id="tokensTimelineCanvas"></canvas>
+        <div class="chart-empty-overlay" id="tokensTimelineEmpty">
+          No turns recorded yet — token savings bars appear after your first turn completes.
+        </div>
+      </div>
     </div>
+
     <div class="chart-card">
-      <h2>Token Breakdown by Phase (Context, Graph, Tool Output, Reasoning, Output)</h2>
-      <canvas id="phaseBreakdownCanvas" width="600" height="230"></canvas>
+      <div class="chart-header">
+        <h2>Token Breakdown by Execution Phase</h2>
+        <span class="chart-subtitle">Context, Graph Slice, Tool Output, Reasoning & Output</span>
+      </div>
+      <div class="chart-viewport">
+        <canvas id="phaseBreakdownCanvas"></canvas>
+        <div class="chart-empty-overlay" id="phaseBreakdownEmpty">
+          Waiting for live turn telemetry to break down Context, Graph, Tool, and Output tokens.
+        </div>
+      </div>
     </div>
+
     <div class="chart-card">
-      <h2>Model Cost Comparison (Forecasted vs. Real vs. Saved $)</h2>
-      <canvas id="modelCostCanvas" width="600" height="230"></canvas>
+      <div class="chart-header">
+        <h2>Model Cost Comparison (Forecasted vs. Real vs. Saved $)</h2>
+        <span class="chart-subtitle">Cross-Provider Spend & Savings ($ USD)</span>
+      </div>
+      <div class="chart-viewport">
+        <canvas id="modelCostCanvas"></canvas>
+        <div class="chart-empty-overlay" id="modelCostEmpty">
+          No model billing records yet in this workspace.
+        </div>
+      </div>
     </div>
+  </section>
+
+  <section class="table-card" id="abProofSection" aria-label="Head-to-Head A/B Benchmark Proof" style="display: none; margin-bottom: 22px;">
+    <h2>🔬 Head-to-Head A/B Transcript Verification (Baseline vs. TokWiz)</h2>
+    <div class="ab-proof-meta" id="abProofMeta"></div>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Prompt</th>
+          <th>Baseline Steps</th>
+          <th>TokWiz Steps</th>
+          <th>Baseline Real Tok</th>
+          <th>TokWiz Real Tok</th>
+          <th>A/B Net Saved Tok</th>
+          <th>Reduction %</th>
+          <th>Baseline $</th>
+          <th>TokWiz $</th>
+        </tr>
+      </thead>
+      <tbody id="abProofTableBody"></tbody>
+    </table>
   </section>
 
   <section class="table-card" aria-label="Live Prompt Audit Log">
-    <h2>Live Prompt Audit Log (Forecast vs. Real Cost Reconciliation)</h2>
+    <h2>Prompt Forecast & Cost Reconciliation Audit Log</h2>
     <table>
       <thead>
         <tr>
           <th>Forecast ID</th>
           <th>Prompt</th>
           <th>Profile</th>
+          <th>Source</th>
           <th>Forecast Tok</th>
           <th>Real Tok</th>
-          <th>Saved Tok</th>
+          <th>Saved Tok (Receipts)</th>
           <th>Forecast $</th>
           <th>Real $</th>
           <th>ΔC ($)</th>
           <th>APE %</th>
-          <th>Variance Attribution</th>
+          <th>Status / Variance</th>
         </tr>
       </thead>
       <tbody id="auditTableBody"></tbody>
@@ -198,8 +616,20 @@
   </section>
 
   <script>
+    const KIND_COLORS = {
+      file: "#38bdf8",
+      class: "#a78bfa",
+      interface: "#a78bfa",
+      type: "#f472b6",
+      function: "#34d399",
+      method: "#fbbf24"
+    };
+
     const SAMPLE_DATA = {
       total_turns: 6,
+      total_forecasts: 6,
+      guardrail_events_count: 4,
+      guardrail_tokens_saved: 14200,
       total_forecast_tokens: 24200,
       total_real_tokens: 24950,
       total_unoptimized_tokens: 79400,
@@ -235,119 +665,831 @@
       ]
     };
 
-    function renderDashboard(data) {
-      document.getElementById("kpiTokensSaved").textContent = Number(data.net_tokens_saved || 0).toLocaleString();
-      document.getElementById("kpiTokensSub").textContent = `Real: ${Number(data.total_real_tokens || 0).toLocaleString()} vs Baseline: ${Number(data.total_unoptimized_tokens || 0).toLocaleString()}`;
-      document.getElementById("kpiCostSaved").textContent = `$${Number(data.net_cost_saved_usd || 0).toFixed(4)}`;
-      document.getElementById("kpiSpentSub").textContent = `Real Spent: $${Number(data.total_real_cost_usd || 0).toFixed(4)} (Forecast: $${Number(data.total_forecast_cost_usd || 0).toFixed(4)})`;
-      document.getElementById("kpiMape").textContent = `${Number(data.recent_mape_pct || data.mape_pct || 0).toFixed(1)}% MAPE`;
-      const delta = Number(data.total_cost_delta_usd || 0);
-      document.getElementById("kpiDeltaSub").textContent = `ΔC: ${delta >= 0 ? "+" : ""}$${delta.toFixed(4)} · All-turn: ${Number(data.mape_pct || 0).toFixed(1)}%`;
-      document.getElementById("kpiReduction").textContent = `${Number(data.avg_reduction_pct || 0).toFixed(1)}%`;
-      document.getElementById("kpiTurnsSub").textContent = `Across ${data.total_turns || 0} reconciled turns`;
-      document.getElementById("kpiCacheHit").textContent = `${Number(data.cache_hit_ratio_pct || 0).toFixed(1)}%`;
-
-      drawCostVarianceChart(data.turns || []);
-      drawTokensTimelineChart(data.turns || []);
-      drawPhaseBreakdownChart(data.phase_breakdown || {});
-      drawModelCostChart(data.model_breakdown || {});
-      renderAuditTable(data.turns || []);
+    /* ==================== RETINA / HIDPI CANVAS HELPER ==================== */
+    function setupHiDPICanvas(canvas) {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      const cssW = Math.max(200, Math.round(rect.width || 600));
+      const cssH = Math.max(150, Math.round(rect.height || 240));
+      if (canvas.width !== cssW * dpr || canvas.height !== cssH * dpr) {
+        canvas.width = cssW * dpr;
+        canvas.height = cssH * dpr;
+      }
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return { ctx, width: cssW, height: cssH };
     }
 
-    function drawCostVarianceChart(turns) {
-      const canvas = document.getElementById("costVarianceCanvas");
-      const ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (!turns.length) return;
+    /* ==================== 3D ROTATABLE GRAPH ENGINE ==================== */
+    const graph3D = {
+      nodes: [],
+      edges: [],
+      projected: new Map(),
+      selectedNode: null,
+      hoveredNode: null,
+      searchTerm: "",
+      edgeFilter: "ALL",
+      yaw: 0.45,
+      pitch: 0.25,
+      zoom: 1.0,
+      autoRotate: false,
+      isDragging: false,
+      dragMoved: false,
+      lastMouseX: 0,
+      lastMouseY: 0,
+      animLoopActive: false
+    };
 
-      const pad = { l: 52, r: 20, t: 20, b: 32 };
-      const w = canvas.width - pad.l - pad.r;
-      const h = canvas.height - pad.t - pad.b;
-      const maxCost = Math.max(0.001, ...turns.map(t => Math.max(t.forecast_cost_usd, t.real_cost_usd) * 1.15));
+    function init3DGraph(graphData) {
+      document.getElementById("kpiGraphNodes").textContent = `${graphData.total_nodes || 0} nodes`;
+      document.getElementById("kpiGraphSub").textContent = `${graphData.total_files || 0} files · ${graphData.total_edges || 0} edges (Live SQLite index)`;
 
-      ctx.strokeStyle = "#23304d";
+      const rawNodes = (graphData.nodes || []).slice(0, 75);
+      const nodeIds = new Set(rawNodes.map(n => n.id));
+      const edges = (graphData.edges || []).filter(
+        e => nodeIds.has(e.source) && nodeIds.has(e.target)
+      );
+
+      const filesList = [...new Set(rawNodes.map(n => n.file_path))];
+      const fileCenters = new Map();
+      filesList.forEach((fp, idx) => {
+        const phi = Math.acos(1 - 2 * (idx + 0.5) / Math.max(1, filesList.length));
+        const theta = Math.PI * (1 + Math.sqrt(5)) * idx;
+        const clusterRadius = 155;
+        fileCenters.set(fp, {
+          x: clusterRadius * Math.sin(phi) * Math.cos(theta),
+          y: clusterRadius * Math.cos(phi) * 0.85,
+          z: clusterRadius * Math.sin(phi) * Math.sin(theta)
+        });
+      });
+
+      const fileIndexCount = new Map();
+      graph3D.nodes = rawNodes.map((n) => {
+        const fc = fileCenters.get(n.file_path) || { x: 0, y: 0, z: 0 };
+        const idxInFile = fileIndexCount.get(n.file_path) || 0;
+        fileIndexCount.set(n.file_path, idxInFile + 1);
+
+        if (n.kind === "file") {
+          return {
+            ...n,
+            x: fc.x,
+            y: fc.y,
+            z: fc.z,
+            vx: 0,
+            vy: 0,
+            vz: 0,
+            baseRadius: 11.5
+          };
+        }
+
+        const subPhi = Math.acos(1 - 2 * ((idxInFile % 16) + 0.5) / 16);
+        const subTheta = Math.PI * (1 + Math.sqrt(5)) * idxInFile;
+        const subRadius = n.kind === "class" ? 55 : 92;
+
+        return {
+          ...n,
+          x: fc.x + subRadius * Math.sin(subPhi) * Math.cos(subTheta),
+          y: fc.y + subRadius * Math.cos(subPhi),
+          z: fc.z + subRadius * Math.sin(subPhi) * Math.sin(subTheta),
+          vx: 0,
+          vy: 0,
+          vz: 0,
+          baseRadius: n.kind === "class" ? 9.5 : Math.max(6.5, Math.min(11, 5.5 + Math.sqrt(n.pagerank || 1) * 1.8))
+        };
+      });
+
+      graph3D.edges = edges;
+
+      const nodeMap = new Map(graph3D.nodes.map(n => [n.id, n]));
+      for (let step = 0; step < 60; step++) {
+        for (let i = 0; i < graph3D.nodes.length; i++) {
+          for (let j = i + 1; j < graph3D.nodes.length; j++) {
+            const a = graph3D.nodes[i];
+            const b = graph3D.nodes[j];
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const dz = b.z - a.z;
+            const d2 = dx * dx + dy * dy + dz * dz + 9;
+            if (d2 < 25000) {
+              const d = Math.sqrt(d2);
+              const f = 1400 / d2;
+              const fx = (dx / d) * f;
+              const fy = (dy / d) * f;
+              const fz = (dz / d) * f;
+              a.vx -= fx; a.vy -= fy; a.vz -= fz;
+              b.vx += fx; b.vy += fy; b.vz += fz;
+            }
+          }
+        }
+        for (const e of graph3D.edges) {
+          const s = nodeMap.get(e.source);
+          const t = nodeMap.get(e.target);
+          if (!s || !t) continue;
+          const dx = t.x - s.x;
+          const dy = t.y - s.y;
+          const dz = t.z - s.z;
+          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+          const rest = e.type === "DEFINES" ? 72 : 135;
+          const f = (dist - rest) * 0.022;
+          const fx = (dx / dist) * f;
+          const fy = (dy / dist) * f;
+          const fz = (dz / dist) * f;
+          s.vx += fx; s.vy += fy; s.vz += fz;
+          t.vx -= fx; t.vy -= fy; t.vz -= fz;
+        }
+        for (const n of graph3D.nodes) {
+          n.vx = (n.vx - n.x * 0.008) * 0.72;
+          n.vy = (n.vy - n.y * 0.008) * 0.72;
+          n.vz = (n.vz - n.z * 0.008) * 0.72;
+          n.x += n.vx;
+          n.y += n.vy;
+          n.z += n.vz;
+        }
+      }
+
+      let maxR = 1;
+      for (const n of graph3D.nodes) {
+        const r = Math.hypot(n.x, n.y, n.z);
+        if (r > maxR) maxR = r;
+      }
+      const normScale = 215 / maxR;
+      for (const n of graph3D.nodes) {
+        n.x *= normScale;
+        n.y *= normScale;
+        n.z *= normScale;
+      }
+
+      if (graph3D.nodes.length > 0 && !graph3D.selectedNode) {
+        const topHub = (graphData.top_hubs && graphData.top_hubs[0])
+          ? graph3D.nodes.find(n => n.id === graphData.top_hubs[0].id)
+          : graph3D.nodes[0];
+        select3DNode(topHub || graph3D.nodes[0]);
+      } else {
+        draw3DScene();
+      }
+
+      renderHubsChart(graphData.top_hubs || []);
+    }
+
+    function project3DPoint(x, y, z, cx, cy) {
+      const cosY = Math.cos(graph3D.yaw);
+      const sinY = Math.sin(graph3D.yaw);
+      const cosP = Math.cos(graph3D.pitch);
+      const sinP = Math.sin(graph3D.pitch);
+
+      const x1 = x * cosY - z * sinY;
+      const z1 = z * cosY + x * sinY;
+      const y2 = y * cosP - z1 * sinP;
+      const z2 = z1 * cosP + y * sinP;
+
+      const fov = 620 * graph3D.zoom;
+      const cameraDist = 560;
+      const depth = Math.max(100, cameraDist + z2);
+      const scale = fov / depth;
+
+      return {
+        sx: cx + x1 * scale,
+        sy: cy + y2 * scale,
+        z: z2,
+        scale
+      };
+    }
+
+    function draw3DScene() {
+      const canvas = document.getElementById("projectGraphCanvas");
+      const { ctx, width: W, height: H } = setupHiDPICanvas(canvas);
+      const cx = W / 2;
+      const cy = H / 2;
+
+      ctx.clearRect(0, 0, W, H);
+
+      ctx.save();
+      const ringRadius = 225;
       ctx.beginPath();
-      ctx.moveTo(pad.l, pad.t);
-      ctx.lineTo(pad.l, pad.t + h);
-      ctx.lineTo(pad.l + w, pad.t + h);
+      for (let i = 0; i <= 72; i++) {
+        const ang = (i / 72) * Math.PI * 2;
+        const p = project3DPoint(Math.cos(ang) * ringRadius, 0, Math.sin(ang) * ringRadius, cx, cy);
+        if (i === 0) ctx.moveTo(p.sx, p.sy); else ctx.lineTo(p.sx, p.sy);
+      }
+      ctx.strokeStyle = "rgba(56, 189, 248, 0.12)";
+      ctx.lineWidth = 1;
       ctx.stroke();
 
-      const stepX = turns.length > 1 ? w / (turns.length - 1) : w / 2;
+      ctx.beginPath();
+      for (let i = 0; i <= 72; i++) {
+        const ang = (i / 72) * Math.PI * 2;
+        const p = project3DPoint(0, Math.sin(ang) * ringRadius, Math.cos(ang) * ringRadius, cx, cy);
+        if (i === 0) ctx.moveTo(p.sx, p.sy); else ctx.lineTo(p.sx, p.sy);
+      }
+      ctx.strokeStyle = "rgba(167, 139, 250, 0.08)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.restore();
 
-      // Residual error bars
-      turns.forEach((t, i) => {
-        const x = pad.l + i * stepX;
-        const yF = pad.t + h - (t.forecast_cost_usd / maxCost) * h;
-        const yR = pad.t + h - (t.real_cost_usd / maxCost) * h;
-        ctx.strokeStyle = t.real_cost_usd > t.forecast_cost_usd ? "rgba(251, 113, 133, 0.55)" : "rgba(52, 211, 153, 0.55)";
-        ctx.lineWidth = 6;
+      graph3D.projected.clear();
+      for (const n of graph3D.nodes) {
+        const proj = project3DPoint(n.x, n.y, n.z, cx, cy);
+        graph3D.projected.set(n.id, {
+          ...proj,
+          node: n,
+          r: Math.max(4.5, n.baseRadius * proj.scale)
+        });
+      }
+
+      const sel = graph3D.selectedNode;
+      const neighborIds = new Set();
+      if (sel) {
+        neighborIds.add(sel.id);
+        for (const e of graph3D.edges) {
+          if (e.source === sel.id) neighborIds.add(e.target);
+          if (e.target === sel.id) neighborIds.add(e.source);
+        }
+      }
+
+      for (const e of graph3D.edges) {
+        if (graph3D.edgeFilter !== "ALL") {
+          if (graph3D.edgeFilter === "CALLS" && e.type !== "CALLS" && e.type !== "INHERITS") continue;
+          if (graph3D.edgeFilter === "DEFINES" && e.type !== "DEFINES") continue;
+          if (graph3D.edgeFilter === "IMPORTS" && e.type !== "IMPORTS") continue;
+        }
+        const ps = graph3D.projected.get(e.source);
+        const pt = graph3D.projected.get(e.target);
+        if (!ps || !pt) continue;
+
+        const avgZ = (ps.z + pt.z) / 2;
+        const depthAlpha = Math.max(0.15, Math.min(0.85, 1 - (avgZ + 230) / 560));
+        const isActive = sel && (e.source === sel.id || e.target === sel.id);
+
         ctx.beginPath();
-        ctx.moveTo(x, yF);
-        ctx.lineTo(x, yR);
+        ctx.moveTo(ps.sx, ps.sy);
+        ctx.lineTo(pt.sx, pt.sy);
+        if (isActive) {
+          ctx.strokeStyle = e.type === "CALLS" ? "#34d399" : "#38bdf8";
+          ctx.lineWidth = 2.2;
+        } else {
+          ctx.strokeStyle = e.type === "CALLS"
+            ? `rgba(52, 211, 153, ${depthAlpha * 0.45})`
+            : `rgba(139, 157, 195, ${depthAlpha * 0.28})`;
+          ctx.lineWidth = 1.1;
+        }
         ctx.stroke();
-      });
 
-      // Forecast line (accent blue)
-      ctx.strokeStyle = "#38bdf8";
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      turns.forEach((t, i) => {
-        const x = pad.l + i * stepX;
-        const y = pad.t + h - (t.forecast_cost_usd / maxCost) * h;
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      });
-      ctx.stroke();
+        if (isActive && e.type === "CALLS") {
+          const mx = ps.sx + (pt.sx - ps.sx) * 0.65;
+          const my = ps.sy + (pt.sy - ps.sy) * 0.65;
+          ctx.fillStyle = "#34d399";
+          ctx.beginPath();
+          ctx.arc(mx, my, 3.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
 
-      // Real line (emerald)
-      ctx.strokeStyle = "#34d399";
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      turns.forEach((t, i) => {
-        const x = pad.l + i * stepX;
-        const y = pad.t + h - (t.real_cost_usd / maxCost) * h;
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      });
-      ctx.stroke();
+      const sortedProj = [...graph3D.projected.values()].sort((a, b) => b.z - a.z);
+      const searchLow = graph3D.searchTerm.toLowerCase();
+      const placedLabelBoxes = [];
 
-      ctx.fillStyle = "#8ea0c0";
-      ctx.font = "11px sans-serif";
-      ctx.fillText("Blue: Forecasted $   Green: Real Billed $   Bars: Residual Error (ΔC)", pad.l + 8, pad.t + 12);
+      for (const item of sortedProj) {
+        const n = item.node;
+        const isSelected = sel && sel.id === n.id;
+        const isHovered = graph3D.hoveredNode && graph3D.hoveredNode.id === n.id;
+        const isNeighbor = neighborIds.has(n.id);
+        const matchesSearch = searchLow && (
+          n.name.toLowerCase().includes(searchLow) ||
+          n.file_path.toLowerCase().includes(searchLow)
+        );
+
+        const depthFactor = Math.max(0.35, Math.min(1.0, 1 - (item.z + 240) / 580));
+        const dimmed = (sel && !isNeighbor && !matchesSearch) || (searchLow && !matchesSearch);
+        const alpha = dimmed ? depthFactor * 0.38 : depthFactor;
+        const baseColor = KIND_COLORS[n.kind] || "#38bdf8";
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+
+        const grad = ctx.createRadialGradient(
+          item.sx - item.r * 0.35,
+          item.sy - item.r * 0.35,
+          item.r * 0.1,
+          item.sx,
+          item.sy,
+          item.r
+        );
+        grad.addColorStop(0, "#ffffff");
+        grad.addColorStop(0.3, baseColor);
+        grad.addColorStop(1, "#081021");
+
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(item.sx, item.sy, item.r, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (isSelected || isHovered || matchesSearch) {
+          ctx.strokeStyle = "#ffffff";
+          ctx.lineWidth = 2.2;
+          ctx.stroke();
+        }
+
+        ctx.restore();
+      }
+
+      const frontToBack = [...sortedProj].reverse();
+      for (const item of frontToBack) {
+        const n = item.node;
+        const isSelected = sel && sel.id === n.id;
+        const isHovered = graph3D.hoveredNode && graph3D.hoveredNode.id === n.id;
+        const isNeighbor = neighborIds.has(n.id);
+        const matchesSearch = searchLow && (
+          n.name.toLowerCase().includes(searchLow) ||
+          n.file_path.toLowerCase().includes(searchLow)
+        );
+
+        const priorityLabel = isSelected || isHovered || matchesSearch || isNeighbor || n.kind === "file";
+        if (!priorityLabel && n.pagerank < 1.35) continue;
+
+        ctx.font = (isSelected || isHovered) ? "700 12px -apple-system, sans-serif" : "600 11px -apple-system, sans-serif";
+        const textW = Math.ceil(ctx.measureText(n.name).width);
+        const boxH = 18;
+        const lx = Math.round(item.sx + item.r + 6);
+        const ly = Math.round(item.sy - 9);
+        const box = { x1: lx - 4, y1: ly, x2: lx + textW + 6, y2: ly + boxH };
+
+        if (!isSelected && !isHovered) {
+          const collides = placedLabelBoxes.some(
+            b => !(box.x2 < b.x1 || box.x1 > b.x2 || box.y2 < b.y1 || box.y1 > b.y2)
+          );
+          if (collides) continue;
+        }
+        placedLabelBoxes.push(box);
+
+        ctx.save();
+        ctx.fillStyle = isSelected ? "rgba(14, 29, 58, 0.95)" : "rgba(9, 14, 26, 0.88)";
+        ctx.strokeStyle = isSelected ? "#38bdf8" : "rgba(30, 44, 71, 0.9)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(box.x1, box.y1, box.x2 - box.x1, boxH, 4);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = isSelected ? "#38bdf8" : "#eef2ff";
+        ctx.fillText(n.name, lx + 1, ly + 13);
+        ctx.restore();
+      }
+
+      draw3DGizmo(ctx, W - 48, H - 48);
     }
 
-    function drawTokensTimelineChart(turns) {
+    function runAutoOrbitLoop() {
+      if (!graph3D.autoRotate) {
+        graph3D.animLoopActive = false;
+        return;
+      }
+      graph3D.animLoopActive = true;
+      if (!graph3D.isDragging) {
+        graph3D.yaw += 0.005;
+        draw3DScene();
+      }
+      requestAnimationFrame(runAutoOrbitLoop);
+    }
+
+    function draw3DGizmo(ctx, gx, gy) {
+      const axes = [
+        { label: "X", x: 24, y: 0, z: 0, color: "#fb7185" },
+        { label: "Y", x: 0, y: -24, z: 0, color: "#34d399" },
+        { label: "Z", x: 0, y: 0, z: 24, color: "#38bdf8" }
+      ];
+      ctx.save();
+      for (const a of axes) {
+        const cosY = Math.cos(graph3D.yaw), sinY = Math.sin(graph3D.yaw);
+        const cosP = Math.cos(graph3D.pitch), sinP = Math.sin(graph3D.pitch);
+        const x1 = a.x * cosY - a.z * sinY;
+        const z1 = a.z * cosY + a.x * sinY;
+        const y2 = a.y * cosP - z1 * sinP;
+        ctx.strokeStyle = a.color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(gx, gy);
+        ctx.lineTo(gx + x1, gy + y2);
+        ctx.stroke();
+        ctx.fillStyle = a.color;
+        ctx.font = "bold 10px sans-serif";
+        ctx.fillText(a.label, gx + x1 * 1.28 - 3, gy + y2 * 1.28 + 3);
+      }
+      ctx.restore();
+    }
+
+    function select3DNode(node) {
+      graph3D.selectedNode = node;
+      const box = document.getElementById("nodeInspector");
+      if (!node) return;
+
+      const nodeMap = new Map(graph3D.nodes.map(n => [n.id, n]));
+      const callers = [];
+      const callees = [];
+      for (const e of graph3D.edges) {
+        if (e.target === node.id && (e.type === "CALLS" || e.type === "DEFINES") && nodeMap.has(e.source)) {
+          callers.push(nodeMap.get(e.source));
+        }
+        if (e.source === node.id && (e.type === "CALLS" || e.type === "DEFINES") && nodeMap.has(e.target)) {
+          callees.push(nodeMap.get(e.target));
+        }
+      }
+
+      const callerPills = callers.slice(0, 6).map(
+        c => `<span class="pill" data-nodeid="${c.id}">${c.name}</span>`
+      ).join("") || `<span style="color:var(--muted)">None</span>`;
+
+      const calleePills = callees.slice(0, 6).map(
+        c => `<span class="pill" data-nodeid="${c.id}">${c.name}</span>`
+      ).join("") || `<span style="color:var(--muted)">None</span>`;
+
+      box.innerHTML = `
+        <div><strong>${node.qualified_name}</strong> <span class="tag">${node.kind}</span></div>
+        <div style="color:var(--muted); margin-top:4px;">File Slice: <strong>${node.file_path}:L${node.start_line}-L${node.end_line}</strong> (${Math.max(1, node.end_line - node.start_line + 1)} lines)</div>
+        <div style="color:var(--muted);">PageRank Score: <strong>${node.pagerank}</strong> · Incoming (In): <strong>${node.in_degree}</strong> · Outgoing (Out): <strong>${node.out_degree}</strong></div>
+        <code>${node.signature}</code>
+        <div style="margin-top:9px; font-size:0.78rem;">
+          <div><strong>Incoming Callers / Defined In (${callers.length}):</strong></div>
+          <div class="pill-list">${callerPills}</div>
+          <div style="margin-top:6px;"><strong>Outgoing Callees / Dependencies (${callees.length}):</strong></div>
+          <div class="pill-list">${calleePills}</div>
+        </div>
+      `;
+
+      box.querySelectorAll(".pill[data-nodeid]").forEach(el => {
+        el.addEventListener("click", () => {
+          const target = nodeMap.get(el.getAttribute("data-nodeid"));
+          if (target) select3DNode(target);
+        });
+      });
+
+      draw3DScene();
+    }
+
+    function setup3DInteractions() {
+      const canvas = document.getElementById("projectGraphCanvas");
+
+      const getCanvasPos = (evt) => {
+        const rect = canvas.getBoundingClientRect();
+        return {
+          x: evt.clientX - rect.left,
+          y: evt.clientY - rect.top
+        };
+      };
+
+      const findHitNode = (x, y) => {
+        const frontFirst = [...graph3D.projected.values()].sort((a, b) => a.z - b.z);
+        for (const item of frontFirst) {
+          if (Math.hypot(item.sx - x, item.sy - y) <= item.r + 6) {
+            return item.node;
+          }
+        }
+        return null;
+      };
+
+      canvas.addEventListener("mousedown", (evt) => {
+        graph3D.isDragging = true;
+        graph3D.dragMoved = false;
+        graph3D.lastMouseX = evt.clientX;
+        graph3D.lastMouseY = evt.clientY;
+      });
+
+      window.addEventListener("mousemove", (evt) => {
+        const pos = getCanvasPos(evt);
+        if (!graph3D.isDragging) {
+          const prevHover = graph3D.hoveredNode;
+          graph3D.hoveredNode = findHitNode(pos.x, pos.y);
+          canvas.style.cursor = graph3D.hoveredNode ? "pointer" : "grab";
+          if (prevHover !== graph3D.hoveredNode) {
+            draw3DScene();
+          }
+          return;
+        }
+        const dx = evt.clientX - graph3D.lastMouseX;
+        const dy = evt.clientY - graph3D.lastMouseY;
+        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+          graph3D.dragMoved = true;
+        }
+        graph3D.yaw += dx * 0.0075;
+        graph3D.pitch = Math.max(-1.35, Math.min(1.35, graph3D.pitch + dy * 0.0075));
+        graph3D.lastMouseX = evt.clientX;
+        graph3D.lastMouseY = evt.clientY;
+        draw3DScene();
+      });
+
+      window.addEventListener("mouseup", (evt) => {
+        if (graph3D.isDragging && !graph3D.dragMoved) {
+          const pos = getCanvasPos(evt);
+          const hit = findHitNode(pos.x, pos.y);
+          if (hit) select3DNode(hit);
+        }
+        graph3D.isDragging = false;
+      });
+
+      canvas.addEventListener("wheel", (evt) => {
+        evt.preventDefault();
+        const factor = evt.deltaY < 0 ? 1.12 : 0.89;
+        graph3D.zoom = Math.max(0.45, Math.min(2.8, graph3D.zoom * factor));
+        draw3DScene();
+      }, { passive: false });
+
+      document.getElementById("zoomInBtn").addEventListener("click", () => {
+        graph3D.zoom = Math.min(2.8, graph3D.zoom * 1.2);
+        draw3DScene();
+      });
+      document.getElementById("zoomOutBtn").addEventListener("click", () => {
+        graph3D.zoom = Math.max(0.45, graph3D.zoom * 0.85);
+        draw3DScene();
+      });
+
+      const autoBtn = document.getElementById("autoRotateBtn");
+      autoBtn.addEventListener("click", () => {
+        graph3D.autoRotate = !graph3D.autoRotate;
+        autoBtn.textContent = `Auto-Orbit: ${graph3D.autoRotate ? "ON" : "OFF"}`;
+        autoBtn.classList.toggle("active", graph3D.autoRotate);
+        if (graph3D.autoRotate && !graph3D.animLoopActive) {
+          runAutoOrbitLoop();
+        }
+      });
+
+      document.getElementById("resetCameraBtn").addEventListener("click", () => {
+        graph3D.yaw = 0.45;
+        graph3D.pitch = 0.25;
+        graph3D.zoom = 1.0;
+        draw3DScene();
+      });
+
+      document.getElementById("graphSearchInput").addEventListener("input", (evt) => {
+        graph3D.searchTerm = evt.target.value.trim();
+        if (graph3D.searchTerm) {
+          const match = graph3D.nodes.find(
+            n => n.name.toLowerCase().includes(graph3D.searchTerm.toLowerCase())
+          );
+          if (match) select3DNode(match);
+        }
+        draw3DScene();
+      });
+
+      document.getElementById("edgeFilterSelect").addEventListener("change", (evt) => {
+        graph3D.edgeFilter = evt.target.value;
+        draw3DScene();
+      });
+
+      window.addEventListener("resize", () => {
+        draw3DScene();
+      });
+    }
+
+    /* ==================== SLEEK CHART.JS ENGINE WITH X & Y AXES ==================== */
+    const chartInstances = {
+      hubs: null,
+      costVariance: null,
+      tokensTimeline: null,
+      phaseBreakdown: null,
+      modelCost: null
+    };
+
+    const GRID_COLOR = "rgba(30, 44, 71, 0.65)";
+    const TICK_COLOR = "#8b9dc3";
+
+    if (window.Chart) {
+      Chart.defaults.color = TICK_COLOR;
+      Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif';
+      Chart.defaults.font.size = 11.5;
+    }
+
+    function destroyChart(key) {
+      if (chartInstances[key]) {
+        chartInstances[key].destroy();
+        chartInstances[key] = null;
+      }
+    }
+
+    function renderHubsChart(hubs) {
+      const top = hubs.slice(0, 7);
+      const canvas = document.getElementById("hubsChartCanvas");
+      destroyChart("hubs");
+      if (!window.Chart || !top.length) return;
+
+      chartInstances.hubs = new Chart(canvas, {
+        type: "bar",
+        data: {
+          labels: top.map(h => h.name),
+          datasets: [{
+            label: "PageRank Score",
+            data: top.map(h => h.pagerank),
+            backgroundColor: top.map(h => KIND_COLORS[h.kind] || "#38bdf8"),
+            borderRadius: 5,
+            barThickness: 14
+          }]
+        },
+        options: {
+          indexAxis: "y",
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: "#090e1a",
+              borderColor: "#1e2c47",
+              borderWidth: 1,
+              callbacks: {
+                label: (ctx) => ` PageRank Score: ${ctx.parsed.x.toFixed(2)}`
+              }
+            }
+          },
+          scales: {
+            x: {
+              beginAtZero: true,
+              grid: { color: GRID_COLOR },
+              ticks: { color: TICK_COLOR },
+              title: { display: true, text: "PageRank Centrality Score", color: TICK_COLOR, font: { size: 10.5 } }
+            },
+            y: {
+              grid: { display: false },
+              ticks: { color: "#eef2ff", font: { weight: "600", size: 11 } }
+            }
+          }
+        }
+      });
+    }
+
+    function renderCostVarianceChart(turns) {
+      const emptyEl = document.getElementById("costVarianceEmpty");
+      const canvas = document.getElementById("costVarianceCanvas");
+      destroyChart("costVariance");
+
+      if (!turns.length || !window.Chart) {
+        emptyEl.style.display = "grid";
+        return;
+      }
+      emptyEl.style.display = "none";
+
+      const labels = turns.map((t, i) => `T${i + 1} (${t.forecast_id.slice(-4)})`);
+      const forecastVals = turns.map(t => Number(t.forecast_cost_usd || 0));
+      const realVals = turns.map(t => Number(t.real_cost_usd || 0));
+      const deltaVals = turns.map(t => Number((t.real_cost_usd - t.forecast_cost_usd).toFixed(5)));
+
+      chartInstances.costVariance = new Chart(canvas, {
+        data: {
+          labels,
+          datasets: [
+            {
+              type: "line",
+              label: "Forecasted Cost ($)",
+              data: forecastVals,
+              borderColor: "#38bdf8",
+              backgroundColor: "rgba(56, 189, 248, 0.14)",
+              borderWidth: 2.5,
+              pointRadius: 4.5,
+              pointHoverRadius: 7,
+              pointBackgroundColor: "#38bdf8",
+              tension: 0.35,
+              fill: true
+            },
+            {
+              type: "line",
+              label: "Real Billed Cost ($)",
+              data: realVals,
+              borderColor: "#34d399",
+              backgroundColor: "rgba(52, 211, 153, 0.10)",
+              borderWidth: 2.5,
+              pointRadius: 4.5,
+              pointHoverRadius: 7,
+              pointBackgroundColor: "#34d399",
+              tension: 0.35,
+              fill: true
+            },
+            {
+              type: "bar",
+              label: "Residual Error ΔC ($)",
+              data: deltaVals,
+              backgroundColor: deltaVals.map(v => v > 0 ? "rgba(251, 113, 133, 0.55)" : "rgba(167, 139, 250, 0.55)"),
+              borderRadius: 4,
+              barPercentage: 0.35
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: {
+              position: "top",
+              labels: { color: "#eef2ff", usePointStyle: true, boxWidth: 8 }
+            },
+            tooltip: {
+              backgroundColor: "#090e1a",
+              borderColor: "#1e2c47",
+              borderWidth: 1,
+              callbacks: {
+                label: (ctx) => ` ${ctx.dataset.label}: $${Number(ctx.parsed.y).toFixed(4)}`
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { color: GRID_COLOR },
+              ticks: { color: "#eef2ff" },
+              title: { display: true, text: "Prompt Turn (ID)", color: TICK_COLOR }
+            },
+            y: {
+              grid: { color: GRID_COLOR },
+              ticks: {
+                color: TICK_COLOR,
+                callback: (val) => `$${Number(val).toFixed(3)}`
+              },
+              title: { display: true, text: "Cost ($ USD)", color: TICK_COLOR }
+            }
+          }
+        }
+      });
+    }
+
+    function renderTokensTimelineChart(turns) {
+      const emptyEl = document.getElementById("tokensTimelineEmpty");
       const canvas = document.getElementById("tokensTimelineCanvas");
-      const ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (!turns.length) return;
+      destroyChart("tokensTimeline");
 
-      const pad = { l: 52, r: 20, t: 20, b: 32 };
-      const w = canvas.width - pad.l - pad.r;
-      const h = canvas.height - pad.t - pad.b;
-      const maxTok = Math.max(100, ...turns.map(t => t.unoptimized_baseline_tokens * 1.1));
-      const barGroupW = w / turns.length;
+      if (!turns.length || !window.Chart) {
+        emptyEl.style.display = "grid";
+        return;
+      }
+      emptyEl.style.display = "none";
 
-      turns.forEach((t, i) => {
-        const xBase = pad.l + i * barGroupW + barGroupW * 0.18;
-        const bw = Math.max(10, barGroupW * 0.28);
-        const hUnopt = (t.unoptimized_baseline_tokens / maxTok) * h;
-        const hReal = (t.real_total_tokens / maxTok) * h;
-
-        ctx.fillStyle = "rgba(251, 113, 133, 0.45)";
-        ctx.fillRect(xBase, pad.t + h - hUnopt, bw, hUnopt);
-
-        ctx.fillStyle = "#34d399";
-        ctx.fillRect(xBase + bw + 4, pad.t + h - hReal, bw, hReal);
+      const labels = turns.map((t, i) => `T${i + 1} [P-${t.profile_code}]`);
+      chartInstances.tokensTimeline = new Chart(canvas, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [
+            {
+              label: "Unoptimized Baseline Tokens",
+              data: turns.map(t => t.unoptimized_baseline_tokens),
+              backgroundColor: "rgba(251, 113, 133, 0.68)",
+              borderColor: "#fb7185",
+              borderWidth: 1,
+              borderRadius: 6
+            },
+            {
+              label: "Real TokWiz Workflow Tokens",
+              data: turns.map(t => t.real_total_tokens),
+              backgroundColor: "rgba(52, 211, 153, 0.82)",
+              borderColor: "#34d399",
+              borderWidth: 1,
+              borderRadius: 6
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: {
+              position: "top",
+              labels: { color: "#eef2ff", usePointStyle: true, boxWidth: 8 }
+            },
+            tooltip: {
+              backgroundColor: "#090e1a",
+              borderColor: "#1e2c47",
+              borderWidth: 1,
+              callbacks: {
+                label: (ctx) => ` ${ctx.dataset.label}: ${Number(ctx.parsed.y).toLocaleString()} tokens`
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { color: GRID_COLOR },
+              ticks: { color: "#eef2ff" },
+              title: { display: true, text: "Prompt Turn & Complexity Profile", color: TICK_COLOR }
+            },
+            y: {
+              beginAtZero: true,
+              grid: { color: GRID_COLOR },
+              ticks: {
+                color: TICK_COLOR,
+                callback: (val) => `${(Number(val) / 1000).toFixed(0)}k`
+              },
+              title: { display: true, text: "Token Count", color: TICK_COLOR }
+            }
+          }
+        }
       });
-
-      ctx.fillStyle = "#8ea0c0";
-      ctx.font = "11px sans-serif";
-      ctx.fillText("Red: Unoptimized Baseline Tokens   Green: Real TokWiz Workflow Tokens", pad.l + 8, pad.t + 12);
     }
 
-    function drawPhaseBreakdownChart(phases) {
+    function renderPhaseBreakdownChart(phases) {
+      const emptyEl = document.getElementById("phaseBreakdownEmpty");
       const canvas = document.getElementById("phaseBreakdownCanvas");
-      const ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      destroyChart("phaseBreakdown");
+
+      const total = Object.values(phases).reduce((acc, v) => acc + Number(v || 0), 0);
+      if (total === 0 || !window.Chart) {
+        emptyEl.style.display = "grid";
+        return;
+      }
+      emptyEl.style.display = "none";
 
       const entries = [
         ["Context Input", phases.context_input || 0, "#38bdf8"],
@@ -356,74 +1498,291 @@
         ["Reasoning", phases.reasoning || 0, "#fbbf24"],
         ["Model Output", phases.output || 0, "#fb7185"]
       ];
-      const maxVal = Math.max(1, ...entries.map(e => e[1]));
-      const pad = { l: 110, r: 60, t: 18, b: 18 };
-      const w = canvas.width - pad.l - pad.r;
-      const rowH = (canvas.height - pad.t - pad.b) / entries.length;
 
-      entries.forEach(([label, val, color], idx) => {
-        const y = pad.t + idx * rowH;
-        const bw = (val / maxVal) * w;
-        ctx.fillStyle = "#e6edf7";
-        ctx.font = "12px sans-serif";
-        ctx.fillText(label, 12, y + rowH * 0.62);
-
-        ctx.fillStyle = color;
-        ctx.fillRect(pad.l, y + 6, Math.max(4, bw), rowH - 12);
-
-        ctx.fillStyle = "#8ea0c0";
-        ctx.fillText(Number(val).toLocaleString(), pad.l + bw + 8, y + rowH * 0.62);
+      chartInstances.phaseBreakdown = new Chart(canvas, {
+        type: "bar",
+        data: {
+          labels: entries.map(e => e[0]),
+          datasets: [{
+            label: "Tokens by Phase",
+            data: entries.map(e => e[1]),
+            backgroundColor: entries.map(e => e[2]),
+            borderRadius: 6,
+            barThickness: 22
+          }]
+        },
+        options: {
+          indexAxis: "y",
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: "#090e1a",
+              borderColor: "#1e2c47",
+              borderWidth: 1,
+              callbacks: {
+                label: (ctx) => ` ${Number(ctx.parsed.x).toLocaleString()} tokens (${((ctx.parsed.x / total) * 100).toFixed(1)}%)`
+              }
+            }
+          },
+          scales: {
+            x: {
+              beginAtZero: true,
+              grid: { color: GRID_COLOR },
+              ticks: {
+                color: TICK_COLOR,
+                callback: (val) => Number(val).toLocaleString()
+              },
+              title: { display: true, text: "Tokens Consumed", color: TICK_COLOR }
+            },
+            y: {
+              grid: { display: false },
+              ticks: { color: "#eef2ff", font: { weight: "600" } },
+              title: { display: true, text: "Execution Phase", color: TICK_COLOR }
+            }
+          }
+        }
       });
     }
 
-    function drawModelCostChart(models) {
+    function renderModelCostChart(models) {
+      const emptyEl = document.getElementById("modelCostEmpty");
       const canvas = document.getElementById("modelCostCanvas");
-      const ctx = canvas.getContext("2d");
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      destroyChart("modelCost");
+
       const keys = Object.keys(models);
-      if (!keys.length) return;
+      if (!keys.length || !window.Chart) {
+        emptyEl.style.display = "grid";
+        return;
+      }
+      emptyEl.style.display = "none";
 
-      const pad = { l: 130, r: 50, t: 24, b: 20 };
-      const w = canvas.width - pad.l - pad.r;
-      const rowH = (canvas.height - pad.t - pad.b) / keys.length;
-      const maxUsd = Math.max(0.0001, ...keys.map(k => Math.max(models[k].real_cost_usd, models[k].saved_cost_usd)));
-
-      keys.forEach((k, idx) => {
-        const m = models[k];
-        const y = pad.t + idx * rowH;
-        ctx.fillStyle = "#e6edf7";
-        ctx.font = "12px sans-serif";
-        ctx.fillText(k, 12, y + rowH * 0.55);
-
-        const wReal = (m.real_cost_usd / maxUsd) * w;
-        const wSaved = (m.saved_cost_usd / maxUsd) * w;
-
-        ctx.fillStyle = "#38bdf8";
-        ctx.fillRect(pad.l, y + 6, Math.max(4, wReal), (rowH - 16) / 2);
-
-        ctx.fillStyle = "#34d399";
-        ctx.fillRect(pad.l, y + 8 + (rowH - 16) / 2, Math.max(4, wSaved), (rowH - 16) / 2);
+      chartInstances.modelCost = new Chart(canvas, {
+        type: "bar",
+        data: {
+          labels: keys,
+          datasets: [
+            {
+              label: "Forecasted Cost ($)",
+              data: keys.map(k => models[k].forecast_cost_usd || 0),
+              backgroundColor: "rgba(167, 139, 250, 0.75)",
+              borderRadius: 6
+            },
+            {
+              label: "Real Billed Cost ($)",
+              data: keys.map(k => models[k].real_cost_usd || 0),
+              backgroundColor: "rgba(56, 189, 248, 0.85)",
+              borderRadius: 6
+            },
+            {
+              label: "Net Saved ($)",
+              data: keys.map(k => models[k].saved_cost_usd || 0),
+              backgroundColor: "rgba(52, 211, 153, 0.85)",
+              borderRadius: 6
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: {
+              position: "top",
+              labels: { color: "#eef2ff", usePointStyle: true, boxWidth: 8 }
+            },
+            tooltip: {
+              backgroundColor: "#090e1a",
+              borderColor: "#1e2c47",
+              borderWidth: 1,
+              callbacks: {
+                label: (ctx) => ` ${ctx.dataset.label}: $${Number(ctx.parsed.y).toFixed(4)}`
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { color: GRID_COLOR },
+              ticks: { color: "#eef2ff", font: { weight: "600" } },
+              title: { display: true, text: "AI Model / Provider", color: TICK_COLOR }
+            },
+            y: {
+              beginAtZero: true,
+              grid: { color: GRID_COLOR },
+              ticks: {
+                color: TICK_COLOR,
+                callback: (val) => `$${Number(val).toFixed(3)}`
+              },
+              title: { display: true, text: "Cumulative Cost ($ USD)", color: TICK_COLOR }
+            }
+          }
+        }
       });
-
-      ctx.fillStyle = "#8ea0c0";
-      ctx.font = "11px sans-serif";
-      ctx.fillText("Blue: Real Billed $   Green: Net Saved $", pad.l, 14);
     }
 
-    function renderAuditTable(turns) {
+    function renderDashboard(data, isDemoMode) {
+      const badge = document.getElementById("modeBadge");
+      if (isDemoMode) {
+        badge.textContent = "● Sample Session Preview (Not Live Data)";
+        badge.className = "mode-badge demo";
+      } else {
+        const wsName = data.workspace_name ? ` (${data.workspace_name})` : "";
+        badge.textContent = `● Live Workspace Telemetry${wsName}`;
+        badge.className = "mode-badge live";
+      }
+
+      const turnsCount = Number(data.total_turns || 0);
+      const forecastsCount = Number(data.total_forecasts || 0);
+      const guardCount = Number(data.guardrail_events_count || 0);
+
+      document.getElementById("kpiTokensSaved").textContent = turnsCount > 0
+        ? Number(data.net_tokens_saved || 0).toLocaleString()
+        : forecastsCount > 0
+          ? `~${Number(data.net_tokens_saved || 0).toLocaleString()}`
+          : "0";
+      document.getElementById("kpiTokensSub").textContent = turnsCount > 0
+        ? `Real: ${Number(data.total_real_tokens || 0).toLocaleString()} vs Baseline: ${Number(data.total_unoptimized_tokens || 0).toLocaleString()}`
+        : forecastsCount > 0
+          ? `Est. ${Number(data.total_forecast_tokens || 0).toLocaleString()} vs Baseline ${Number(data.total_unoptimized_tokens || 0).toLocaleString()} (${forecastsCount} forecasts)`
+          : `${forecastsCount} forecasts · ${guardCount} guardrail intercepts`;
+
+      document.getElementById("kpiCostSaved").textContent = turnsCount > 0
+        ? `$${Number(data.net_cost_saved_usd || 0).toFixed(4)}`
+        : forecastsCount > 0
+          ? `~$${Number(data.net_cost_saved_usd || 0).toFixed(4)}`
+          : "$0.0000";
+      document.getElementById("kpiSpentSub").textContent = turnsCount > 0
+        ? `Real Spent: $${Number(data.total_real_cost_usd || 0).toFixed(4)} · Forecast: $${Number(data.total_forecast_cost_usd || 0).toFixed(4)}`
+        : `Forecasted: $${Number(data.total_forecast_cost_usd || 0).toFixed(4)} · Unoptimized: $${Number(data.total_unoptimized_cost_usd || 0).toFixed(4)}`;
+
+      if (turnsCount > 0) {
+        document.getElementById("kpiMape").textContent = `${Number(data.recent_mape_pct || data.mape_pct || 0).toFixed(1)}% MAPE`;
+        const delta = Number(data.total_cost_delta_usd || 0);
+        document.getElementById("kpiDeltaSub").textContent = `ΔC: ${delta >= 0 ? "+" : ""}$${delta.toFixed(4)} · Cache Hit: ${Number(data.cache_hit_ratio_pct || 0).toFixed(1)}%`;
+      } else if (forecastsCount > 0) {
+        document.getElementById("kpiMape").textContent = `${forecastsCount} forecasted`;
+        document.getElementById("kpiDeltaSub").textContent = "Awaiting turn completion to reconcile Real $";
+      } else {
+        document.getElementById("kpiMape").textContent = "0 turns";
+        document.getElementById("kpiDeltaSub").textContent = "Run a prompt to reconcile Forecast vs. Real $";
+      }
+
+      const reconciledIds = new Set((data.turns || []).map(t => t.forecast_id));
+      const pendingForecasts = (data.forecasts || []).filter(f => !reconciledIds.has(f.forecast_id));
+
+      document.getElementById("kpiReduction").textContent = `${Number(data.avg_reduction_pct || 0).toFixed(1)}%`;
+      document.getElementById("kpiTurnsSub").textContent = turnsCount > 0
+        ? `${turnsCount} reconciled · ${pendingForecasts.length} pending forecast(s)`
+        : forecastsCount > 0
+          ? `Est. reduction across ${forecastsCount} forecast(s)`
+          : "0 turns recorded in telemetry.db";
+
+      // Combine reconciled turns + any pending unreconciled forecasts so batch `tokwiz predict`
+      // forecasts remain visible alongside completed turns in the charts.
+      const pendingChartItems = pendingForecasts.map(f => {
+        const cSonnet = (f.costs && f.costs["claude-sonnet-4"]) ? f.costs["claude-sonnet-4"] : {};
+        const fUsd = Number(cSonnet.cached_cost_usd || cSonnet.uncached_cost_usd || 0);
+        return {
+          forecast_id: f.forecast_id || "tw_pred",
+          prompt: f.prompt || "",
+          profile_code: f.profile_code || "B",
+          optimization_level: f.optimization_level || 1,
+          forecast_total_tokens: Number(f.total_tokens || 0),
+          real_total_tokens: Number(f.total_tokens || 0),
+          unoptimized_baseline_tokens: Number(f.unoptimized_tokens || 0),
+          net_tokens_saved: Number(f.savings_tokens || 0),
+          forecast_cost_usd: fUsd,
+          real_cost_usd: fUsd,
+          cost_delta_usd: 0
+        };
+      });
+      const chartTurns = [...(data.turns || []), ...pendingChartItems];
+
+      renderCostVarianceChart(chartTurns);
+      renderTokensTimelineChart(chartTurns);
+      renderPhaseBreakdownChart(data.phase_breakdown || {});
+      renderModelCostChart(data.model_breakdown || {});
+      renderAbProofSection(data.ab_comparison || null);
+      renderAuditTable(data.turns || [], pendingForecasts);
+    }
+
+    function renderAbProofSection(abData) {
+      const sec = document.getElementById("abProofSection");
+      const meta = document.getElementById("abProofMeta");
+      const tbody = document.getElementById("abProofTableBody");
+      if (!sec || !tbody || !meta) return;
+      tbody.replaceChildren();
+      meta.replaceChildren();
+
+      if (!abData || !Array.isArray(abData.paired_turns) || abData.paired_turns.length === 0) {
+        sec.style.display = "none";
+        return;
+      }
+      sec.style.display = "block";
+      const tot = abData.totals || {};
+      const baseLog = abData.baseline_transcript ? abData.baseline_transcript.split("/").slice(-3).join("/") : "session.jsonl";
+      const twLog = abData.tokwiz_transcript ? abData.tokwiz_transcript.split("/").slice(-3).join("/") : "session.jsonl";
+
+      meta.innerHTML = `
+        <span>Baseline Log: <code title="${abData.baseline_transcript || ""}">${baseLog}</code></span>
+        <span>TokWiz Log: <code title="${abData.tokwiz_transcript || ""}">${twLog}</code></span>
+        <span>Total A/B Reduction: <strong style="color: var(--emerald);">${Number(tot.ab_reduction_pct || 0).toFixed(1)}% (${Number(tot.ab_tokens_saved || 0) >= 0 ? "+" : ""}${Number(tot.ab_tokens_saved || 0).toLocaleString()} tok saved)</strong></span>
+        <span>Total Steps: <strong>${Number(tot.baseline_steps || 0)} (Baseline) vs ${Number(tot.tokwiz_steps || 0)} (TokWiz)</strong></span>
+      `;
+
+      abData.paired_turns.forEach(p => {
+        const tr = document.createElement("tr");
+        const saved = Number(p.ab_tokens_saved || 0);
+        tr.innerHTML = `
+          <td><strong>#${p.turn_number}</strong></td>
+          <td>${p.prompt}</td>
+          <td>${Number(p.baseline_steps)} steps (${Number(p.baseline_full_reads || 0)} full reads)</td>
+          <td>${Number(p.tokwiz_steps)} steps (${Number(p.tokwiz_graph_queries || 0)} graph, ${Number(p.tokwiz_ranged_reads || 0)} ranged)</td>
+          <td>${Number(p.baseline_tokens).toLocaleString()}</td>
+          <td>${Number(p.tokwiz_tokens).toLocaleString()}</td>
+          <td style="color: var(--emerald); font-weight: 700;">${saved >= 0 ? "+" : ""}${saved.toLocaleString()}</td>
+          <td style="color: var(--emerald); font-weight: 600;">${Number(p.ab_reduction_pct).toFixed(1)}%</td>
+          <td>$${Number(p.baseline_cost_usd).toFixed(4)}</td>
+          <td>$${Number(p.tokwiz_cost_usd).toFixed(4)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function renderAuditTable(turns, pendingForecasts) {
       const tbody = document.getElementById("auditTableBody");
       tbody.replaceChildren();
-      turns.slice().reverse().forEach(t => {
+
+      if (turns.length === 0 && pendingForecasts.length === 0) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td colspan="12" class="empty-state">No prompts recorded yet in <code>.tokwiz/telemetry.db</code>. Send a prompt in your AI agent to see real-time telemetry and itemized receipts here.</td>`;
+        tbody.appendChild(tr);
+        return;
+      }
+
+      turns.slice().reverse().forEach((t, idx) => {
         const tr = document.createElement("tr");
         const tags = (t.variance_tags || ["ON_TARGET"]).map(tag => `<span class="tag ${tag}">${tag}</span>`).join("");
         const delta = Number(t.cost_delta_usd || 0);
+        const src = t.telemetry_source || "API_EXACT";
+        const receipts = Array.isArray(t.receipts) ? t.receipts : [];
+        const drawerId = `receiptDrawer_${idx}`;
+        const receiptBtnHtml = receipts.length > 0
+          ? `<button type="button" class="receipt-btn" data-drawer="${drawerId}">🔍 ${receipts.length} receipt${receipts.length > 1 ? "s" : ""}</button>`
+          : "";
+        const abHint = Number(t.ab_baseline_tokens || 0) > 0
+          ? `<div style="font-size: 0.70rem; color: var(--muted); margin-top: 2px;">A/B vs Base: ${(Number(t.ab_baseline_tokens) - Number(t.real_total_tokens) >= 0 ? "+" : "")}${(Number(t.ab_baseline_tokens) - Number(t.real_total_tokens)).toLocaleString()} tok</div>`
+          : "";
+
         tr.innerHTML = `
           <td><code>${t.forecast_id}</code></td>
           <td>${t.prompt}</td>
           <td>P-${t.profile_code} (L${t.optimization_level})</td>
+          <td><span class="source-badge ${src}" title="${t.transcript_path || "Direct provider usage telemetry"}">${src}</span></td>
           <td>${Number(t.forecast_total_tokens).toLocaleString()}</td>
           <td>${Number(t.real_total_tokens).toLocaleString()}</td>
-          <td style="color: var(--emerald); font-weight: 600;">+${Number(t.net_tokens_saved).toLocaleString()}</td>
+          <td style="color: var(--emerald); font-weight: 600;">+${Number(t.net_tokens_saved).toLocaleString()}${receiptBtnHtml}${abHint}</td>
           <td>$${Number(t.forecast_cost_usd).toFixed(4)}</td>
           <td>$${Number(t.real_cost_usd).toFixed(4)}</td>
           <td>${delta >= 0 ? "+" : ""}$${delta.toFixed(4)}</td>
@@ -431,25 +1790,88 @@
           <td>${tags}</td>
         `;
         tbody.appendChild(tr);
-      });
-    }
 
-    async function loadLiveStats() {
-      try {
-        const res = await fetch("/api/stats");
-        const data = await res.json();
-        if (data && data.total_turns > 0) {
-          renderDashboard(data);
-        } else {
-          renderDashboard(SAMPLE_DATA);
+        if (receipts.length > 0) {
+          const drawerTr = document.createElement("tr");
+          drawerTr.id = drawerId;
+          drawerTr.className = "receipt-drawer-row";
+          drawerTr.style.display = "none";
+          const itemsHtml = receipts.map(r => `
+            <div class="receipt-item">
+              <div>
+                <span class="receipt-type">${r.type || "RECEIPT"}</span>
+                <strong>${r.target || ""}</strong> — <span style="color: var(--muted);">${r.detail || ""}</span>
+              </div>
+              <div style="color: var(--emerald); font-weight: 700; white-space: nowrap; margin-left: 14px;">
+                +${Number(r.saved_tokens || 0).toLocaleString()} tok saved
+              </div>
+            </div>
+          `).join("");
+          drawerTr.innerHTML = `<td colspan="12"><div class="receipt-list">${itemsHtml}</div></td>`;
+          tbody.appendChild(drawerTr);
+
+          const btn = tr.querySelector(".receipt-btn");
+          if (btn) {
+            btn.addEventListener("click", () => {
+              const isHidden = drawerTr.style.display === "none";
+              drawerTr.style.display = isHidden ? "table-row" : "none";
+            });
+          }
         }
-      } catch (_err) {
-        renderDashboard(SAMPLE_DATA);
+      });
+
+      if (pendingForecasts.length > 0) {
+        pendingForecasts.slice().reverse().forEach(f => {
+          const tr = document.createElement("tr");
+          const cCost = (f.costs && f.costs["claude-sonnet-4"]) ? f.costs["claude-sonnet-4"].cached_cost_usd : 0;
+          tr.innerHTML = `
+            <td><code>${f.forecast_id}</code></td>
+            <td>${f.prompt}</td>
+            <td>P-${f.profile_code} (L${f.optimization_level})</td>
+            <td><span class="source-badge">PENDING</span></td>
+            <td>${Number(f.total_tokens).toLocaleString()}</td>
+            <td>—</td>
+            <td style="color: var(--emerald);">~${Number(f.savings_tokens || 0).toLocaleString()} est.</td>
+            <td>$${Number(cCost).toFixed(4)}</td>
+            <td>—</td>
+            <td>—</td>
+            <td>—</td>
+            <td><span class="tag PENDING_FORECAST">FORECASTED (AWAITING TURN END)</span></td>
+          `;
+          tbody.appendChild(tr);
+        });
       }
     }
 
-    document.getElementById("refreshBtn").addEventListener("click", loadLiveStats);
-    document.getElementById("demoBtn").addEventListener("click", () => renderDashboard(SAMPLE_DATA));
+    async function loadLiveStats() {
+      document.getElementById("liveBtn").classList.add("active");
+      document.getElementById("demoBtn").classList.remove("active");
+      try {
+        const [statsRes, graphRes] = await Promise.all([
+          fetch("/api/stats"),
+          fetch("/api/graph")
+        ]);
+        const statsData = await statsRes.json();
+        const graphData = await graphRes.json();
+
+        renderDashboard(statsData, false);
+        if (graphData && graphData.nodes) {
+          init3DGraph(graphData);
+        }
+      } catch (_err) {
+        renderDashboard({ total_turns: 0, turns: [], forecasts: [] }, false);
+      }
+    }
+
+    setup3DInteractions();
+
+    document.getElementById("liveBtn").addEventListener("click", loadLiveStats);
+    document.getElementById("demoBtn").addEventListener("click", () => {
+      document.getElementById("demoBtn").classList.add("active");
+      document.getElementById("liveBtn").classList.remove("active");
+      renderDashboard(SAMPLE_DATA, true);
+    });
+
     loadLiveStats();
   </script>
 </body>
