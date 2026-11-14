@@ -300,10 +300,23 @@ def sync_workspace_transcript_turns(workspace_root: Path) -> List[Dict[str, obje
 
     cal_mod = _load_calibration_module()
     engine = cal_mod.CalibrationEngine(root_dir=ws_root)
+    existing_baseline_by_id: Dict[str, int] = {}
+    db_path = ws_root / ".tokwiz" / "telemetry.db"
+    if db_path.exists():
+        try:
+            import sqlite3
+
+            with sqlite3.connect(str(db_path)) as conn:
+                for row in conn.execute("SELECT forecast_id, unoptimized_baseline_tokens FROM turns").fetchall():
+                    existing_baseline_by_id[str(row[0])] = int(row[1])
+        except Exception:
+            existing_baseline_by_id = {}
+
     reconciled_records: List[Dict[str, object]] = []
     used_turn_indices: set[int] = set()
 
     for f in forecasts:
+        fid = str(f.get("forecast_id", ""))
         f_prompt_norm = _norm_prompt(str(f.get("prompt", "")))
         if not f_prompt_norm:
             continue
@@ -323,13 +336,19 @@ def sync_workspace_transcript_turns(workspace_root: Path) -> List[Dict[str, obje
         u_payload = dict(rt["usage_payload"])  # type: ignore[arg-type]
 
         # If a matching turn was also run in `project-baseline`, attach its real measured baseline tokens
+        expected_base_tok = int(f.get("unoptimized_tokens", 0))
         for bt in baseline_turns:
             bt_prompt_norm = _norm_prompt(str(bt.get("prompt", "")))
             if f_prompt_norm[:45] in bt_prompt_norm or bt_prompt_norm[:45] in f_prompt_norm:
                 bt_usage = cal_mod.parse_usage_payload(bt["usage_payload"])
                 u_payload["real_baseline_tokens"] = int(bt["total_tokens"])
                 u_payload["real_baseline_cost_usd"] = cal_mod.compute_real_cost_usd(bt_usage, engine.pricing)
+                expected_base_tok = int(bt["total_tokens"])
                 break
+
+        # Do not re-reconcile or mutate turns that are already stored in telemetry.db
+        if fid in existing_baseline_by_id and existing_baseline_by_id[fid] == expected_base_tok:
+            continue
 
         rec = engine.reconcile_turn(forecast=f, usage_payload=u_payload)
         reconciled_records.append(rec)
