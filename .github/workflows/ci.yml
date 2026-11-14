@@ -14,12 +14,11 @@ permissions:
 
 jobs:
   test-and-benchmark:
-    name: Test & Benchmark (Python ${{ matrix.python-version }} on ${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    name: Test & Benchmark (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-latest]
         python-version: ["3.11", "3.12", "3.13"]
 
     steps:
