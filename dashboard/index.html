@@ -1032,12 +1032,12 @@
             <div class="formula-note"><strong>In plain English:</strong> Starting context + your prompt + (each tool call adds to the chat history and gets re-read on every remaining step) + AI thinking + final answer. Cutting 5 unnecessary tool steps shrinks every subsequent step!</div>
           </div>
 
-          <h4>B. Cost Delta (ΔC) &amp; Forecast Accuracy (APE % / MAPE)</h4>
+          <h4>B. Residual Error / Cost Delta (ΔC) &amp; Forecast Accuracy (APE % / MAPE)</h4>
           <div class="formula-box">
-            ΔC ($) = Real Cost − Forecast Cost<br/>
+            Residual Error (ΔC $) = Real Cost − Forecast Cost<br/>
             APE %  = ( |Real Cost − Forecast Cost| / Real Cost ) × 100%<br/>
             MAPE   = Average of APE % across all completed turns
-            <div class="formula-note"><strong>In plain English:</strong> If TokWiz predicted $0.10 and the turn actually cost $0.08, <code>ΔC = -$0.02</code> (you saved more than expected) and <code>APE = 25%</code>. Lower MAPE means tighter predictions (TokWiz targets ≤ 20%).</div>
+            <div class="formula-note"><strong>In plain English:</strong> <strong>Residual Error (ΔC)</strong> is simply the leftover dollar gap between what TokWiz predicted and what you were actually billed. Positive (<code>+$0.02</code>, pink bar) means the turn cost more than forecasted; negative (<code>-$0.02</code>, purple bar) means it cost less than forecasted. Lower MAPE means tighter predictions (TokWiz targets ≤ 20%).</div>
           </div>
 
           <h4>C. Self-Calibrating EMA Weight Update (<code>scripts/calibration.py</code>)</h4>
@@ -1168,6 +1168,10 @@
             <div class="glossary-entry">
               <strong>Variance Tags (Status)</strong>
               Why Real cost differed from Forecast: <code>ON_TARGET</code>, <code>EXTRA_TOOL_LOOPS</code>, <code>CACHE_MISS_DRIFT</code>, <code>REASONING_SPIKE</code>, or <code>UNBOUNDED_TOOL_OUTPUT</code>.
+            </div>
+            <div class="glossary-entry">
+              <strong>Residual Error (ΔC $)</strong>
+              The dollar difference between actual billed cost and the pre-prompt forecast (<code>Real $ − Forecast $</code>). Positive = cost more than predicted; negative = cost less than predicted.
             </div>
             <div class="glossary-entry">
               <strong>Baseline vs. TokWiz (A/B Proof)</strong>
