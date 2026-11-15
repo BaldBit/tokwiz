@@ -2249,8 +2249,9 @@
         : forecastsCount > 0
           ? `~${Number(data.net_tokens_saved || 0).toLocaleString()}`
           : "0";
+      const effTok = Number(data.total_effective_tokens || data.total_real_tokens || 0);
       document.getElementById("kpiTokensSub").textContent = turnsCount > 0
-        ? `Real: ${Number(data.total_real_tokens || 0).toLocaleString()} vs Baseline: ${Number(data.total_unoptimized_tokens || 0).toLocaleString()}`
+        ? `Eff: ${effTok.toLocaleString()} (${Number(data.total_real_tokens || 0).toLocaleString()} raw) vs Est. Base: ${Number(data.total_unoptimized_tokens || 0).toLocaleString()}`
         : forecastsCount > 0
           ? `Est. ${Number(data.total_forecast_tokens || 0).toLocaleString()} vs Baseline ${Number(data.total_unoptimized_tokens || 0).toLocaleString()} (${forecastsCount} forecasts)`
           : `${forecastsCount} forecasts · ${guardCount} guardrail intercepts`;
@@ -2279,9 +2280,13 @@
       const reconciledIds = new Set((data.turns || []).map(t => t.forecast_id));
       const pendingForecasts = (data.forecasts || []).filter(f => !reconciledIds.has(f.forecast_id));
 
+      const abInfo = data.ab_comparison;
+      const abPct = abInfo && typeof abInfo.total_reduction_pct === "number" ? Number(abInfo.total_reduction_pct) : null;
       document.getElementById("kpiReduction").textContent = `${Number(data.avg_reduction_pct || 0).toFixed(1)}%`;
       document.getElementById("kpiTurnsSub").textContent = turnsCount > 0
-        ? `${turnsCount} reconciled · ${pendingForecasts.length} pending forecast(s)`
+        ? (abPct !== null
+            ? `${turnsCount} reconciled (est.) · A/B Verified: ${abPct.toFixed(1)}%`
+            : `${turnsCount} reconciled (est.) · ${pendingForecasts.length} pending forecast(s)`)
         : forecastsCount > 0
           ? `Est. reduction across ${forecastsCount} forecast(s)`
           : "0 turns recorded in telemetry.db";
