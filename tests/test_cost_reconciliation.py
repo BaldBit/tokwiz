@@ -275,7 +275,7 @@ class TestCostReconciliationAndCalibration(unittest.TestCase):
         html = (DASHBOARD_DIR / "index.html").read_text(encoding="utf-8")
 
         # 1. Sample mode and A/B leakage must stay removed from normal dashboard UI
-        for forbidden in ("demoBtn", "SAMPLE_DATA", "isDemoMode", "Preview Sample Session", "A/B Verified", "A/B vs Base"):
+        for forbidden in ("demoBtn", "SAMPLE_DATA", "isDemoMode", "Preview Sample Session", "A/B Verified", "A/B vs Base", "Live Workspace", "Live Data"):
             self.assertNotIn(forbidden, html, f"Found forbidden stale UI string: {forbidden}")
         self.assertRegex(html, r'id="abProofSection"[^>]*style="[^"]*display:\s*none')
 

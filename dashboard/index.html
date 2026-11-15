@@ -742,14 +742,14 @@
           <svg class="icon icon-lg" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
         </span>
         <h1>TokWiz Codebase Graph &amp; Cost Analytics</h1>
-        <span id="modeBadge" class="mode-badge live">● Live Workspace</span>
+        <span id="modeBadge" class="mode-badge live">● Workspace Telemetry</span>
       </div>
       <p>AST + PageRank Symbol Graph · Pre-Prompt Cost Forecasting · Receipt-Backed Cost Reconciliation</p>
     </div>
     <div class="controls">
-      <button id="liveBtn" type="button" class="active">
-        <svg class="icon" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-        Live Data
+      <button id="liveBtn" type="button" class="active" title="Refresh telemetry">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        Refresh
       </button>
       <button id="themeToggleBtn" type="button" title="Toggle Dark / Light theme">
         <svg class="icon" id="themeIconSun" viewBox="0 0 24 24" style="display:none"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
@@ -802,7 +802,7 @@
         <span class="kpi-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.59 13.51 6.83 3.98M15.41 6.51l-6.82 3.98"/></svg></span>
       </div>
       <div class="kpi-value" id="kpiGraphNodes" style="color: var(--violet);">0 nodes</div>
-      <div class="kpi-sub" id="kpiGraphSub">0 files · 0 edges (Live SQLite index)</div>
+      <div class="kpi-sub" id="kpiGraphSub">0 files · 0 edges (SQLite AST index)</div>
     </div>
   </section>
 
@@ -1233,7 +1233,7 @@
 
     function init3DGraph(graphData) {
       document.getElementById("kpiGraphNodes").textContent = `${graphData.total_nodes || 0} nodes`;
-      document.getElementById("kpiGraphSub").textContent = `${graphData.total_files || 0} files · ${graphData.total_edges || 0} edges (Live SQLite index)`;
+      document.getElementById("kpiGraphSub").textContent = `${graphData.total_files || 0} files · ${graphData.total_edges || 0} edges (SQLite AST index)`;
 
       const rawNodes = (graphData.nodes || []).slice(0, 75);
       const nodeIds = new Set(rawNodes.map(n => n.id));
@@ -2206,8 +2206,7 @@
 
     function renderDashboard(data) {
       const badge = document.getElementById("modeBadge");
-      const wsName = data.workspace_name ? ` (${data.workspace_name})` : "";
-      badge.textContent = `● Live Workspace Telemetry${wsName}`;
+      badge.textContent = data.workspace_name ? `● Workspace: ${data.workspace_name}` : "● Workspace Telemetry";
       badge.className = "mode-badge live";
 
       const turnsCount = Number(data.total_turns || 0);
