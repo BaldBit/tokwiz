@@ -113,6 +113,7 @@ class TestMCPServerAndTranscriptDiscovery(unittest.TestCase):
                 "\n".join(
                     [
                         json.dumps({"type": "user", "timestamp": "2026-11-15T10:00:00Z", "message": {"role": "user", "content": [{"type": "text", "text": "Refactor validate_token"}]}}),
+                        json.dumps({"type": "user", "isMeta": True, "timestamp": "2026-11-15T10:00:01Z", "message": {"role": "user", "content": [{"type": "text", "text": "Base directory for this skill: /tmp/.claude/skills/tokwiz # TokWiz Optimization Rules"}]}}),
                         json.dumps({"type": "assistant", "message": {"model": "claude-sonnet-4", "usage": {"input_tokens": 120, "cache_creation_input_tokens": 300, "cache_read_input_tokens": 1000, "output_tokens": 80}, "content": [{"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": str(self.ws / "auth.py"), "offset": 1, "limit": 3}}]}}),
                         json.dumps({"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "def validate_token..."}]}}),
                     ]

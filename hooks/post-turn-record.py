@@ -588,7 +588,8 @@ def _parse_claude_transcript_turns(
             else:
                 prompt_text = ""
 
-            if prompt_text and not prompt_text.startswith("<"):
+            is_synthetic_skill = bool(obj.get("isMeta")) or prompt_text.startswith("Base directory for this skill:")
+            if prompt_text and not prompt_text.startswith("<") and not is_synthetic_skill:
                 _flush_cur()
                 pending_tools.clear()
                 cur = {
