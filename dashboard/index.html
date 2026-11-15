@@ -2350,9 +2350,6 @@
         const receiptBtnHtml = receipts.length > 0
           ? `<button type="button" class="receipt-btn" data-drawer="${drawerId}">🔍 ${receipts.length} receipt${receipts.length > 1 ? "s" : ""}</button>`
           : "";
-        const abHint = Number(t.ab_baseline_tokens || 0) > 0
-          ? `<div style="font-size: 0.70rem; color: var(--muted); margin-top: 2px;">A/B vs Base: ${(Number(t.ab_baseline_tokens) - Number(t.real_total_tokens) >= 0 ? "+" : "")}${(Number(t.ab_baseline_tokens) - Number(t.real_total_tokens)).toLocaleString()} tok</div>`
-          : "";
 
         tr.innerHTML = `
           <td><code>${t.forecast_id}</code></td>
@@ -2361,7 +2358,7 @@
           <td><span class="source-badge ${src}" title="${t.transcript_path || "Direct provider usage telemetry"}">${src}</span></td>
           <td>${Number(t.forecast_total_tokens).toLocaleString()}</td>
           <td>${Number(t.real_total_tokens).toLocaleString()}</td>
-          <td style="color: var(--emerald); font-weight: 600;">+${Number(t.net_tokens_saved).toLocaleString()}${receiptBtnHtml}${abHint}</td>
+          <td style="color: var(--emerald); font-weight: 600;">+${Number(t.net_tokens_saved).toLocaleString()}${receiptBtnHtml}</td>
           <td>$${Number(t.forecast_cost_usd).toFixed(4)}</td>
           <td>$${Number(t.real_cost_usd).toFixed(4)}</td>
           <td>${delta >= 0 ? "+" : ""}$${delta.toFixed(4)}</td>

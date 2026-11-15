@@ -152,6 +152,10 @@ class TestCostReconciliationAndCalibration(unittest.TestCase):
             cal_mod.attribute_variance_causes({"total_tokens": 6000, "estimated_steps": 3, "tool_loop_tokens": 1200}, cached_usage),
             ["ON_TARGET"],
         )
+        self.assertEqual(
+            cal_mod.attribute_variance_causes({"total_tokens": 2000, "estimated_steps": 3, "tool_loop_tokens": 1200}, cached_usage),
+            ["CONTEXT_GROWTH"],
+        )
 
     def test_pre_post_turn_reconciliation_and_telemetry_summary(self) -> None:
         # 1. Trigger PreInvocation hook to create .tokwiz/active-forecast.json
@@ -271,7 +275,7 @@ class TestCostReconciliationAndCalibration(unittest.TestCase):
         html = (DASHBOARD_DIR / "index.html").read_text(encoding="utf-8")
 
         # 1. Sample mode and A/B leakage must stay removed from normal dashboard UI
-        for forbidden in ("demoBtn", "SAMPLE_DATA", "isDemoMode", "Preview Sample Session", "A/B Verified"):
+        for forbidden in ("demoBtn", "SAMPLE_DATA", "isDemoMode", "Preview Sample Session", "A/B Verified", "A/B vs Base"):
             self.assertNotIn(forbidden, html, f"Found forbidden stale UI string: {forbidden}")
         self.assertRegex(html, r'id="abProofSection"[^>]*style="[^"]*display:\s*none')
 
