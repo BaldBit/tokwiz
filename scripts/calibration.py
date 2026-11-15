@@ -197,6 +197,9 @@ def attribute_variance_causes(
     if usage.tool_output_tokens > f_tool * 1.5 and (usage.tool_output_tokens - f_tool) > 300 and effective_total > int(f_total * 1.15):
         tags.append("UNBOUNDED_TOOL_OUTPUT")
 
+    if not tags and effective_total > int(f_total * 1.25):
+        tags.append("CONTEXT_GROWTH")
+
     if not tags:
         tags.append("ON_TARGET")
     return tags
@@ -286,21 +289,22 @@ class CalibrationEngine:
         if isinstance(raw_receipts, list):
             receipts: List[Dict[str, object]] = [r for r in raw_receipts if isinstance(r, dict)]
             net_saved_tok = sum(max(0, int(r.get("saved_tokens", 0))) for r in receipts)
-            unopt_tok = usage.total_tokens + net_saved_tok
+            unopt_tok = usage.effective_tokens + net_saved_tok
             net_saved_cost = round(net_saved_tok * blended_in_rate, 6)
             unopt_cost = round(r_cost + net_saved_cost, 6)
         else:
-            unopt_tok = int(forecast.get("unoptimized_tokens", max(f_total_tok * 2, usage.total_tokens + 1000)))
-            net_saved_tok = max(0, unopt_tok - (usage.total_tokens + skill_overhead_tokens))
+            eff_tok = usage.effective_tokens
+            unopt_tok = int(forecast.get("unoptimized_tokens", max(f_total_tok * 2, eff_tok + 1000)))
+            net_saved_tok = max(0, unopt_tok - (eff_tok + skill_overhead_tokens))
             net_saved_cost = round(max(0.0, unopt_cost - r_cost), 6)
             receipts = [
                 {
                     "type": "WORKFLOW_COMPRESSION",
                     "target": "session_turn",
                     "full_tokens": unopt_tok,
-                    "actual_tokens": usage.total_tokens,
+                    "actual_tokens": eff_tok,
                     "saved_tokens": net_saved_tok,
-                    "detail": f"Workflow context & tool output compression ({usage.total_tokens:,} tok vs {unopt_tok:,} tok)",
+                    "detail": f"Workflow context & tool output compression ({eff_tok:,} eff tok vs {unopt_tok:,} tok)",
                 }
             ]
 

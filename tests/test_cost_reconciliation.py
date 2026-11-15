@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -149,6 +152,10 @@ class TestCostReconciliationAndCalibration(unittest.TestCase):
             cal_mod.attribute_variance_causes({"total_tokens": 6000, "estimated_steps": 3, "tool_loop_tokens": 1200}, cached_usage),
             ["ON_TARGET"],
         )
+        self.assertEqual(
+            cal_mod.attribute_variance_causes({"total_tokens": 2000, "estimated_steps": 3, "tool_loop_tokens": 1200}, cached_usage),
+            ["CONTEXT_GROWTH"],
+        )
 
     def test_pre_post_turn_reconciliation_and_telemetry_summary(self) -> None:
         # 1. Trigger PreInvocation hook to create .tokwiz/active-forecast.json
@@ -262,6 +269,148 @@ class TestCostReconciliationAndCalibration(unittest.TestCase):
         finally:
             server.shutdown()
             server.server_close()
+
+    def test_dashboard_js_and_chart_invariants(self) -> None:
+        """Catch UI/JS regressions: no sample mode, A/B scoped, every chart has ⓘ, and chart units match."""
+        html = (DASHBOARD_DIR / "index.html").read_text(encoding="utf-8")
+
+        # 1. Sample mode and A/B leakage must stay removed from normal dashboard UI
+        for forbidden in ("demoBtn", "SAMPLE_DATA", "isDemoMode", "Preview Sample Session", "A/B Verified", "A/B vs Base", "Live Workspace", "Live Data"):
+            self.assertNotIn(forbidden, html, f"Found forbidden stale UI string: {forbidden}")
+        self.assertRegex(html, r'id="abProofSection"[^>]*style="[^"]*display:\s*none')
+
+        # 2. Every graph-header and chart-header <h2> must include an ⓘ info-tip
+        headers = re.findall(r'<div class="(?:graph|chart)-header">.*?<h2>(.*?)</h2>', html, flags=re.DOTALL)
+        self.assertGreaterEqual(len(headers), 5)
+        for hdr in headers:
+            self.assertIn('class="info-tip"', hdr, f"Missing ⓘ info-tip in header: {hdr}")
+            self.assertIn('data-tip="', hdr, f"Missing data-tip in header: {hdr}")
+
+        # 3. Extract main inline <script> and verify JS syntax + chart unit consistency via Node
+        scripts = re.findall(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", html, flags=re.DOTALL)
+        main_js = max(scripts, key=len)
+        node_bin = shutil.which("node")
+        if node_bin:
+            harness = r"""
+const vm = require("vm");
+const elements = {};
+function makeEl(id) {
+  return {
+    id,
+    textContent: "",
+    innerHTML: "",
+    value: "ALL",
+    style: { display: "" },
+    className: "",
+    classList: { add() {}, remove() {}, contains() { return false; } },
+    addEventListener() {},
+    replaceChildren() {},
+    appendChild() {},
+    querySelector() { return null; },
+    querySelectorAll() { return []; },
+    getContext() { return { setTransform() {}, clearRect() {} }; },
+    getBoundingClientRect() { return { width: 800, height: 400 }; },
+  };
+}
+const chartConfigs = {};
+class FakeChart {
+  constructor(canvas, cfg) {
+    chartConfigs[canvas.id] = cfg;
+  }
+  destroy() {}
+}
+FakeChart.defaults = { color: "", font: {} };
+const doc = {
+  documentElement: { setAttribute() {}, getAttribute() { return "dark"; } },
+  createElement(tag) { return makeEl(tag); },
+  getElementById(id) {
+    if (!elements[id]) elements[id] = makeEl(id);
+    return elements[id];
+  },
+  querySelectorAll() { return []; },
+  addEventListener() {},
+};
+const ctx = {
+  console,
+  Math,
+  Number,
+  String,
+  Array,
+  Object,
+  JSON,
+  Promise,
+  Date,
+  Set,
+  Map,
+  Chart: FakeChart,
+  document: doc,
+  localStorage: { getItem() { return "dark"; }, setItem() {} },
+  window: { devicePixelRatio: 1, addEventListener() {} },
+  fetch: async () => ({ json: async () => ({}) }),
+  requestAnimationFrame: () => 0,
+};
+ctx.window.Chart = FakeChart;
+vm.runInNewContext(process.argv[1], ctx);
+
+// Render a heavily cached turn where net_tokens_saved = 0
+const payload = {
+  workspace_name: "test-ws",
+  total_turns: 1,
+  total_forecasts: 1,
+  total_real_tokens: 102000,
+  total_effective_tokens: 21000,
+  total_unoptimized_tokens: 21000,
+  net_tokens_saved: 0,
+  avg_reduction_pct: 0.0,
+  total_forecast_cost_usd: 0.06,
+  total_real_cost_usd: 0.06,
+  net_cost_saved_usd: 0.0,
+  total_cost_delta_usd: 0.0,
+  mape_pct: 0.0,
+  recent_mape_pct: 0.0,
+  cache_hit_ratio_pct: 90.0,
+  phase_breakdown: { context_input: 10000, graph_skill: 0, tool_output: 0, reasoning: 0, output: 2000 },
+  model_breakdown: { "claude-sonnet-4": { turns: 1, forecast_cost_usd: 0.06, real_cost_usd: 0.06, saved_cost_usd: 0.0 } },
+  turns: [{
+    forecast_id: "tw_cache1",
+    prompt: "Cached turn",
+    profile_code: "C",
+    telemetry_source: "TRANSCRIPT",
+    real_input_tokens: 100000,
+    real_cached_input_tokens: 90000,
+    real_reasoning_tokens: 0,
+    real_output_tokens: 2000,
+    forecast_total_tokens: 21000,
+    real_total_tokens: 102000,
+    unoptimized_baseline_tokens: 21000,
+    net_tokens_saved: 0,
+    forecast_cost_usd: 0.06,
+    real_cost_usd: 0.06,
+    cost_delta_usd: 0.0,
+    ape_pct: 0.0,
+    variance_tags: ["ON_TARGET"],
+    receipts: []
+  }],
+  forecasts: [],
+  ab_comparison: null
+};
+ctx.renderDashboard(payload);
+const tl = chartConfigs.tokensTimelineCanvas;
+if (!tl) throw new Error("tokensTimelineCanvas not rendered");
+const baselineBar = tl.data.datasets[0].data[0];
+const tokwizBar = tl.data.datasets[1].data[0];
+if (baselineBar !== 21000 || tokwizBar !== 21000) {
+  throw new Error(`Chart unit mismatch: baseline=${baselineBar}, tokwiz=${tokwizBar} (expected both 21000)`);
+}
+if (doc.getElementById("abProofSection").style.display !== "none") {
+  throw new Error("abProofSection must stay hidden when ab_comparison is null");
+}
+if (doc.getElementById("kpiTurnsSub").textContent.includes("A/B")) {
+  throw new Error("kpiTurnsSub leaked A/B text in normal mode");
+}
+"""
+            proc = subprocess.run([node_bin, "-e", harness, main_js], capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 0, f"Dashboard JS invariant failed:\n{proc.stderr}\n{proc.stdout}")
 
 
 if __name__ == "__main__":

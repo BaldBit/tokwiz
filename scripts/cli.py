@@ -170,7 +170,7 @@ def _cmd_init(argv: List[str]) -> int:
             hooks_cfg["PreToolUse"] = _merge_hook_list(
                 hooks_cfg.get("PreToolUse"),
                 {
-                    "matcher": "Read|read_file|view_file|Bash|run_command",
+                    "matcher": "Read|Grep|Glob|read_file|view_file|Bash|run_command",
                     "hooks": [{"type": "command", "command": pre_tool_cmd}],
                 },
                 "pre-tool-guard.py",
@@ -183,7 +183,11 @@ def _cmd_init(argv: List[str]) -> int:
         settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
         _ensure_line_in_file(
             base_dir / "CLAUDE.md",
-            "Follow `.claude/skills/tokwiz/SKILL.md` for token optimization, graph lookups, and ranged reads.",
+            "TokWiz Protocol (do NOT `cat SKILL.md` — rules are below): "
+            "1) Call `mcp__tokwiz__tokwiz_slice` / `mcp__tokwiz__tokwiz_trace` / `mcp__tokwiz__tokwiz_graph_query` BEFORE `grep`/`find`/`Read`; "
+            "2) Call `mcp__tokwiz__tokwiz_skeleton` before ranged reads on >150L files; "
+            "3) Call `mcp__tokwiz__tokwiz_test` instead of full `unittest`/`pytest`; "
+            "4) Skip lockfiles/`node_modules/`/`dist/`.",
         )
         mcp_cmd = [sys.executable, str(_REPO_ROOT / "scripts" / "mcp-server.py"), "--root", str(base_dir)]
         _register_mcp_server(base_dir / ".mcp.json", mcp_cmd)

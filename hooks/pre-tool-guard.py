@@ -64,9 +64,59 @@ READ_TOOL_NAMES = {
     "mcp_filesystem_read_file",
 }
 
-MAX_UNBOUNDED_LINES = 300
+MAX_UNBOUNDED_LINES = 150
 MAX_STRUCTURED_UNBOUNDED_LINES = 150
 STRUCTURED_DATA_EXTENSIONS = {".json", ".yaml", ".yml", ".toml", ".sql"}
+GREP_TOOL_NAMES = {"grep", "grep_search", "ripgrep", "search_grep"}
+
+
+def _load_project_graph():
+    spec = importlib.util.spec_from_file_location("project_graph", str(_SCRIPTS_DIR / "project-graph.py"))
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Cannot load project-graph.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["project_graph"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _get_unbounded_line_limit(workspace_root: Path, is_structured: bool) -> int:
+    if is_structured:
+        return MAX_STRUCTURED_UNBOUNDED_LINES
+    cfg_path = workspace_root / ".tokwiz" / "config.json"
+    if cfg_path.exists():
+        try:
+            cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+            val = int(cfg.get("max_unbounded_lines") or 0)
+            if val > 0:
+                return val
+        except Exception:
+            pass
+    return MAX_UNBOUNDED_LINES
+
+
+def _try_graph_intercept_grep(workspace_root: Path, pattern: str) -> Optional[str]:
+    clean = pattern.strip().strip("\"'")
+    # Only intercept single identifier / symbol queries when graph.db already exists
+    if not clean or not re.match(r"^[A-Za-z_][A-Za-z0-9_.:-]{1,64}$", clean):
+        return None
+    db_path = workspace_root / ".tokwiz" / "graph.db"
+    if not db_path.exists():
+        return None
+    try:
+        pg = _load_project_graph()
+        graph = pg.ProjectGraph(root_dir=workspace_root)
+        res = graph.slice_code(clean, max_tokens=450)
+        if not res.matched_symbols:
+            return None
+        _record_guardrail_event(workspace_root, "graph_intercepted_grep", clean, 900)
+        return (
+            f"[TokWiz Guardrail] Intercepted repo-wide grep for `{clean}` (saved ~900 tokens). "
+            "Use `tokwiz_slice` / `tokwiz_graph_query` next time:\n\n"
+            f"{res.formatted_slice}"
+        )
+    except Exception:
+        return None
 
 
 def _load_skeletonizer():
@@ -299,6 +349,19 @@ def handle_pre_tool_use(
                     f"[TokWiz Guardrail] Blocked reading lockfile `{lf}` via shell. "
                     "Inspect `package.json`, `pyproject.toml`, or `Cargo.toml` instead."
                 )
+        for seg in re.split(r"\s*(?:&&|\|\||;|\n)\s*", cmd_str):
+            grep_m = re.match(r"^\s*(?:rg|grep)\s+(?:-[A-Za-z]+\s+)*['\"]?([A-Za-z_][A-Za-z0-9_.:-]{1,64})['\"]?(?:\s|$)", seg)
+            if grep_m:
+                hit = _try_graph_intercept_grep(workspace_root, grep_m.group(1))
+                if hit:
+                    return _build_deny_response(hit)
+        return _build_allow_response()
+
+    if tool_low in GREP_TOOL_NAMES:
+        pat = str(tool_input.get("pattern") or tool_input.get("Query") or tool_input.get("query") or "")
+        hit = _try_graph_intercept_grep(workspace_root, pat)
+        if hit:
+            return _build_deny_response(hit)
         return _build_allow_response()
 
     if tool_low not in READ_TOOL_NAMES and "read" not in tool_low:
@@ -331,7 +394,7 @@ def handle_pre_tool_use(
     lines = content.splitlines()
     has_range = _has_line_range(tool_input)
     is_structured = resolved_path.suffix.lower() in STRUCTURED_DATA_EXTENSIONS
-    line_limit = MAX_STRUCTURED_UNBOUNDED_LINES if is_structured else MAX_UNBOUNDED_LINES
+    line_limit = _get_unbounded_line_limit(workspace_root, is_structured)
 
     if not has_range and len(lines) > line_limit:
         skel_mod = _load_skeletonizer()
