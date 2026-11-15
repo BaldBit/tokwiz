@@ -10,15 +10,15 @@
 [![Release & Versioning](https://github.com/BaldBit/tokwiz/actions/workflows/release.yml/badge.svg)](https://github.com/BaldBit/tokwiz/actions/workflows/release.yml)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-38bdf8.svg)](https://www.python.org/)
 [![Agents](https://img.shields.io/badge/agents-Claude%20Code%20%7C%20Codex%20%7C%20Gemini%20%7C%20Cursor-34d399.svg)](#supported-ai-agents)
-[![Zero LLM Overhead](https://img.shields.io/badge/forecast%20overhead-0%20tokens-a78bfa.svg)](#22-ahead-of-time-multi-step-token--cost-forecaster)
+[![Zero LLM Overhead](https://img.shields.io/badge/forecast%20overhead-0%20tokens-a78bfa.svg)](#pillar-2-ahead-of-time-multi-step-token--cost-forecaster)
 
 </div>
 
 ---
 
-# Part I — Why TokWiz? (Product Overview)
+## Why TokWiz?
 
-## The Problem: AI Agents Burn 5x–20x More Tokens Than Necessary
+### The Problem: AI Agents Burn 5x–20x More Tokens Than Necessary
 
 Modern AI coding agents (**Claude Code**, **OpenAI Codex CLI**, **Google Gemini CLI / Antigravity**, **Cursor**, **GitHub Copilot**) are extraordinarily capable—but their default execution loops waste massive amounts of context and money:
 
@@ -44,10 +44,12 @@ Modern AI coding agents (**Claude Code**, **OpenAI Codex CLI**, **Google Gemini 
 
 | Capability | What TokWiz Does | Impact |
 | :--- | :--- | :--- |
-| **🧭 Tier 2 Codebase Graph** | Replaces multi-turn `grep`/`find` thrashing with a local SQLite + Personalized PageRank AST graph returning exact `file:Lstart-Lend` coordinates. | **60%–85%** fewer discovery tokens |
+| **🧭 Tier 2 Codebase Graph & One-Shot Slicer** | Replaces multi-turn `grep`/`find` thrashing with a local SQLite + Personalized PageRank AST graph (`tokwiz graph query`) and one-shot definition + caller bundler (`tokwiz slice`). | **60%–85%** fewer discovery turns |
 | **🔮 Pre-Prompt Cost Forecaster** | Predicts full multi-step workflow tokens and `$` cost across Claude, Codex, and Gemini in **<50ms** at **0 LLM tokens** before execution starts. | **100%** upfront cost visibility |
-| **🛡️ Hard Tool Guardrails** | Intercepts `>300`-line unbounded file reads with compact AST skeletons (~10% size) and blocks lockfiles, build artifacts, and binaries. | **80%–90%** read compression |
+| **🛡️ Hard Tool Guardrails & Read Deduplicator** | Intercepts `>300`-line code and `>150`-line JSON/YAML/TOML/SQL reads with compact skeletons, blocks lockfiles/binaries, and caches unchanged SHA-1 reads across the session. | **80%–90%** read compression |
+| **🧪 Graph-Driven Impacted Test Runner** | Traverses `.tokwiz/graph.db` reverse edges from `git status` (`tokwiz test`) to run only affected tests and emit a 1-line pass receipt. | **70%–95%** smaller test loops |
 | **🧹 Shell Output Compressor** | Strips ANSI codes, progress spinners, passing test noise, deep stack frames, and lockfile diffs from `pytest`, `npm test`, `cargo`, and `git diff`. | **50%–85%** smaller tool logs |
+| **💾 Working Memory Checkpoints** | Generates a `<200`-token snapshot (`.tokwiz/checkpoint.md` via `tokwiz checkpoint`) with changed files, symbol coordinates, and test status for clean `/compact` resets. | Zero re-exploration after compact |
 | **🎯 Self-Calibrating Accuracy** | Reconciles **Forecasted Cost vs. Real Billed Cost ($\Delta C$)** after every turn and auto-tunes weights via Exponential Moving Average (EMA). | **≤ 20% MAPE** forecast accuracy |
 | **📊 Local Web Dashboard** | Built-in CLI report (`tokwiz stats`) and interactive web UI (`tokwiz dashboard`) visualizing net `$` saved, cache hit rates, and variance tags. | Full auditability |
 
@@ -111,11 +113,18 @@ tokwiz init --global --agent claude,codex,gemini
 # Forecast workflow tokens, blast radius, and $ cost before running a prompt
 tokwiz predict "Refactor validateToken to support API key headers and update callers"
 
-# Query the Tier 2 Personalized PageRank symbol graph
+# Query the Tier 2 Personalized PageRank symbol graph (or bundle code + callers in one shot)
 tokwiz graph query validateToken --max-tokens 400
+tokwiz slice validateToken --max-tokens 600
 
-# Extract a compact AST signature skeleton with exact line numbers
+# Extract a compact AST or structured JSON/YAML/TOML/SQL skeleton
 tokwiz skeleton scripts/project-graph.py
+
+# Run only graph-impacted tests with a 1-line pass receipt
+tokwiz test
+
+# Generate a <200-token working memory snapshot before /compact
+tokwiz checkpoint
 
 # View Forecasted vs. Real Cost variance, provenance badges & itemized receipts
 tokwiz stats
@@ -141,9 +150,9 @@ tokwiz dashboard --port 8420
 ---
 ---
 
-# Part II — Technical Architecture & Engineering Deep Dive
+## Technical Architecture & Engineering Deep Dive
 
-## 2.1 System Architecture Overview
+### System Architecture Overview
 
 ```mermaid
 flowchart TD
@@ -174,7 +183,7 @@ flowchart TD
 
 ---
 
-## 2.2 Pillar 1: Tier 2 Project Graph Engine (`scripts/project-graph.py`)
+## Pillar 1: Tier 2 Project Graph Engine (`scripts/project-graph.py`)
 
 To eliminate multi-turn `find` and `grep` exploration, TokWiz maintains a local structural codebase graph stored in SQLite (`.tokwiz/graph.db` with `WAL` journaling).
 
@@ -203,7 +212,7 @@ CALLEES (1):
 
 ---
 
-## 2.3 Pillar 2: Ahead-of-Time Multi-Step Token & Cost Forecaster (`scripts/token-estimator.py`)
+## Pillar 2: Ahead-of-Time Multi-Step Token & Cost Forecaster (`scripts/token-estimator.py`)
 
 Single-turn character counting underestimates agentic workflows by 5x–20x because tool outputs and growing conversation prefixes compound on every step. TokWiz models the entire expected tool-execution loop:
 
@@ -230,7 +239,7 @@ Using `references/pricing-matrix.json`, TokWiz computes projected uncached cost,
 
 ---
 
-## 2.4 Pillar 3: Forecast vs. Real Cost Reconciliation & EMA Self-Calibration (`scripts/calibration.py`)
+## Pillar 3: Forecast vs. Real Cost Reconciliation & EMA Self-Calibration (`scripts/calibration.py`)
 
 To ensure pre-prompt predictions remain accurate on real repositories, TokWiz closes the feedback loop after every turn (`hooks/post-turn-record.py`):
 
@@ -252,17 +261,18 @@ To ensure pre-prompt predictions remain accurate on real repositories, TokWiz cl
 
 ---
 
-## 2.5 Pillar 4: Deterministic Anti-Wastage Guardrails (`hooks/pre-tool-guard.py`)
+## Pillar 4: Deterministic Anti-Wastage Guardrails (`hooks/pre-tool-guard.py`)
 
 LLMs can forget markdown instructions during complex debugging loops. TokWiz enforces deterministic guardrails at the tool-execution boundary:
 
 1. **High-Waste Path Blocking:** Immediately denies attempts to read lockfiles (`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `Cargo.lock`, `poetry.lock`, `uv.lock`), build directories (`dist/`, `build/`, `.next/`, `out/`), vendor folders (`node_modules/`, `.venv/`), binary assets, and `.min.js` bundles.
-2. **Unbounded `>300`-Line File Interception:** When an agent calls `read_file` / `Read` on a source file exceeding 300 lines without specifying `StartLine`/`EndLine` (or `offset`/`limit`), the hook intercepts the call and returns the file's **AST Signature Skeleton** (`scripts/code-skeletonizer.py`), prompting the agent to re-read only the exact line range it needs.
-3. **Fail-Open Resilience (`<200ms` SLA):** All hooks wrap execution in a top-level fail-open handler. Even if SQLite is locked or `stdin` is malformed, hooks return `"decision": "allow"` within `<200ms` so host agents never hang or crash.
+2. **Unbounded `>300`-Line Code & `>150`-Line Structured Data Interception:** When an agent calls `read_file` / `Read` on a source file (`>300` lines) or `.json`/`.yaml`/`.yml`/`.toml`/`.sql` file (`>150` lines) without specifying `StartLine`/`EndLine` (or `offset`/`limit`), the hook intercepts the call and returns a compact **AST or Schema Skeleton** (`scripts/code-skeletonizer.py`), prompting a targeted ranged read.
+3. **Session File-Read Deduplicator:** Tracks `(file_path, start_line, end_line, sha1)` in `.tokwiz/session-reads.json`. Redundant re-reads of unchanged file ranges return a compact `[TokWiz Cache Hit]` notice; edits (SHA-1 changes) or expanded ranges automatically allow fresh reads.
+4. **Fail-Open Resilience (`<200ms` SLA):** All hooks wrap execution in a top-level fail-open handler. Even if SQLite is locked or `stdin` is malformed, hooks return `"decision": "allow"` within `<200ms` so host agents never hang or crash.
 
 ---
 
-## 2.6 Repository Layout
+## Repository Layout
 
 ```text
 tokwiz/
@@ -278,8 +288,9 @@ tokwiz/
 │   └── level3-compression.md          # On-demand Level 3 aggressive compression rules
 ├── scripts/
 │   ├── cli.py                         # Unified `tokwiz` CLI dispatcher
-│   ├── project-graph.py               # Tier 2 SQLite + Personalized PageRank codebase graph
-│   ├── code-skeletonizer.py           # Polyglot AST signature & line-range extractor
+│   ├── project-graph.py               # Tier 2 SQLite + Personalized PageRank graph & code slicer
+│   ├── code-skeletonizer.py           # Polyglot AST & JSON/YAML/TOML/SQL schema skeletonizer
+│   ├── workspace-ops.py               # Graph-driven impacted test runner & <200-token checkpointer
 │   ├── token-estimator.py             # Pre-prompt blast-radius & workflow cost forecaster
 │   ├── calibration.py                 # Forecast-vs-Real reconciliation & EMA self-calibration
 │   ├── telemetry.py                   # SQLite telemetry ledger & CLI stats reporter
@@ -287,21 +298,21 @@ tokwiz/
 │   └── context-analyzer.py            # Session transcript duplicate & cache-hygiene auditor
 ├── hooks/
 │   ├── pre-prompt-predict.py          # PreInvocation / UserPromptSubmit zero-token forecast hook
-│   ├── pre-tool-guard.py              # PreToolUse lockfile & >300-line read guardrail
+│   ├── pre-tool-guard.py              # PreToolUse lockfile, >300/>150-line read & SHA-1 cache guard
 │   └── post-turn-record.py            # PostInvocation / Stop cost reconciliation hook
 ├── adapters/                          # Turnkey configs for Claude Code, Codex, Gemini, Cursor
 ├── dashboard/                         # Local analytics web server & Chart.js/Canvas UI (`tokwiz dashboard`)
 ├── demo/                              # 25-file (~4,500-LOC) side-by-side A/B sandbox generator (`setup-ab-demo.py`)
-├── tests/                             # Tier 1-4 automated unit & E2E test suite (29 tests)
+├── tests/                             # Tier 1-4 automated unit & E2E test suite (32 tests)
 └── evaluations/                       # A/B benchmark runner & historical transcript replay
 ```
 
 ---
 
-## 2.7 Running Tests & Benchmarks
+## Running Tests & Benchmarks
 
 ```bash
-# Run all 29 unit, hook contract, cost reconciliation, E2E, and benchmark tests
+# Run all 32 unit, hook contract, cost reconciliation, E2E, and benchmark tests
 python3 -m unittest discover -s tests -v
 
 # Run the paired A/B benchmark suite
