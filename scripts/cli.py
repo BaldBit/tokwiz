@@ -68,6 +68,26 @@ def _merge_hook_list(existing_list: object, new_entry: Dict[str, object], script
     return preserved
 
 
+def _register_mcp_server(config_path: Path, mcp_cmd: List[str]) -> None:
+    """Register `tokwiz` stdio MCP server without clobbering existing MCP servers."""
+    data: Dict[str, object] = {}
+    if config_path.exists():
+        try:
+            loaded = json.loads(config_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                data = loaded
+        except Exception:
+            data = {}
+    servers = data.setdefault("mcpServers", {})
+    if isinstance(servers, dict):
+        servers["tokwiz"] = {
+            "command": mcp_cmd[0],
+            "args": mcp_cmd[1:],
+        }
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
 def _parse_agents(agent_arg: str) -> Set[str]:
     supported = {"claude", "codex", "gemini", "cursor"}
     tokens = {t.strip().lower() for t in agent_arg.split(",") if t.strip()}
@@ -165,6 +185,8 @@ def _cmd_init(argv: List[str]) -> int:
             base_dir / "CLAUDE.md",
             "Follow `.claude/skills/tokwiz/SKILL.md` for token optimization, graph lookups, and ranged reads.",
         )
+        mcp_cmd = [sys.executable, str(_REPO_ROOT / "scripts" / "mcp-server.py"), "--root", str(base_dir)]
+        _register_mcp_server(base_dir / ".mcp.json", mcp_cmd)
         configured.append("claude")
 
     # 3. Gemini CLI / Antigravity setup
@@ -207,6 +229,8 @@ def _cmd_init(argv: List[str]) -> int:
             )
         hooks_json_path.write_text(json.dumps(hooks_payload, indent=2) + "\n", encoding="utf-8")
         _ensure_line_in_file(base_dir / "GEMINI.md", rule_line)
+        mcp_cmd = [sys.executable, str(_REPO_ROOT / "scripts" / "mcp-server.py"), "--root", str(base_dir)]
+        _register_mcp_server(base_dir / ".agents" / "mcp.json", mcp_cmd)
         configured.append("gemini")
 
     # 4. OpenAI Codex CLI setup
@@ -224,6 +248,8 @@ def _cmd_init(argv: List[str]) -> int:
         shutil.copyfile(skill_src, cursor_skill)
         _ensure_line_in_file(base_dir / ".cursorrules", rule_line)
         _ensure_line_in_file(base_dir / ".github" / "copilot-instructions.md", rule_line)
+        mcp_cmd = [sys.executable, str(_REPO_ROOT / "scripts" / "mcp-server.py"), "--root", str(base_dir)]
+        _register_mcp_server(base_dir / ".cursor" / "mcp.json", mcp_cmd)
         configured.append("cursor")
 
     print(
@@ -339,6 +365,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             "  skeleton <file>         Extract compact AST/data skeleton with line numbers\n"
             "  test [files...]         Run graph-impacted tests with 1-line pass receipt\n"
             "  checkpoint              Generate <200-token working memory snapshot\n"
+            "  mcp [--root DIR]        Start native stdio MCP server for IDE agents\n"
             "  filter [-- <cmd>]       Compress noisy test, build, and git shell outputs\n"
             "  stats [--session|--days N]  Display token savings & Forecast-vs-Real cost report\n"
             "  verify-ab [--json]      Verify head-to-head A/B savings from real IDE transcripts\n"
@@ -371,6 +398,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if cmd == "checkpoint":
         mod = _load_script_module("workspace_ops", "workspace-ops.py")
         return int(mod.main_checkpoint(rest))
+    if cmd == "mcp":
+        mod = _load_script_module("mcp_server", "mcp-server.py")
+        return int(mod.main(rest))
     if cmd == "filter":
         mod = _load_script_module("output_filter", "output-filter.py")
         return int(mod.main(rest))

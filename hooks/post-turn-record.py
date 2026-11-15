@@ -487,27 +487,332 @@ def _parse_antigravity_transcript_turns(transcript_path: Path, target_workspace:
     return completed_turns
 
 
+def _claude_project_slug(workspace_root: Path) -> str:
+    return re.sub(r"[^a-zA-Z0-9-]", "-", str(workspace_root.resolve()))
+
+
+def _parse_claude_transcript_turns(
+    transcript_path: Path,
+    target_workspace: Path,
+) -> List[Dict[str, object]]:
+    """Parse a Claude Code `~/.claude/projects/<slug>/*.jsonl` transcript into turns."""
+    source_files = _scan_workspace_source_files(target_workspace)
+    turns: List[Dict[str, object]] = []
+    cur: Optional[Dict[str, object]] = None
+    pending_tools: Dict[str, Dict[str, object]] = {}
+
+    def _flush_cur() -> None:
+        if cur is None or not str(cur.get("prompt") or "").strip():
+            return
+        receipts, r_summary = _compute_turn_receipts(
+            list(cur["tool_events"]), target_workspace, source_files
+        )
+        in_tot = max(1, int(cur["input_tok"]) + int(cur["cache_create_tok"]))
+        cached_tot = int(cur["cache_read_tok"])
+        out_tot = max(1, int(cur["output_tok"]))
+        turns.append(
+            {
+                "prompt": cur["prompt"],
+                "created_at": cur["created_at"],
+                "steps": max(1, int(cur["steps"])),
+                "input_tok": in_tot,
+                "output_tok": out_tot,
+                "reasoning_tok": 0,
+                "tool_tok": int(cur["tool_tok"]),
+                "total_tokens": in_tot + out_tot,
+                "real_total_tokens": in_tot + cached_tot + out_tot,
+                "receipts": receipts,
+                "receipt_saved_tokens": sum(int(r.get("saved_tokens") or 0) for r in receipts),
+                "tool_counts": dict(cur["tool_counts"]),
+                "transcript_path": str(transcript_path),
+                "usage_payload": {
+                    "agent_host": "claude",
+                    "model_id": str(cur.get("model") or "claude-sonnet-4"),
+                    "real_steps": max(1, int(cur["steps"])),
+                    "telemetry_source": "TRANSCRIPT_MEASURED",
+                    "transcript_path": str(transcript_path),
+                    "receipts": receipts,
+                    "usage": {
+                        "input_tokens": in_tot,
+                        "cached_input_tokens": cached_tot,
+                        "output_tokens": out_tot,
+                        "reasoning_tokens": 0,
+                        "tool_output_tokens": int(cur["tool_tok"]),
+                    },
+                },
+            }
+        )
+
+    try:
+        raw_lines = transcript_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+
+    for line in raw_lines:
+        ln = line.strip()
+        if not ln.startswith("{"):
+            continue
+        try:
+            obj = json.loads(ln)
+        except Exception:
+            continue
+        if not isinstance(obj, dict):
+            continue
+
+        evt_type = str(obj.get("type") or "")
+        msg = obj.get("message") if isinstance(obj.get("message"), dict) else {}
+        content = msg.get("content")
+
+        if evt_type == "user":
+            # Extract tool_results first
+            if isinstance(content, list):
+                text_parts: List[str] = []
+                for blk in content:
+                    if not isinstance(blk, dict):
+                        continue
+                    if blk.get("type") == "tool_result" and cur is not None:
+                        tid = str(blk.get("tool_use_id") or "")
+                        res_raw = blk.get("content")
+                        res_text = res_raw if isinstance(res_raw, str) else json.dumps(res_raw or "")
+                        cur["tool_tok"] = int(cur["tool_tok"]) + max(1, len(res_text) // 4)
+                        if tid in pending_tools:
+                            t_info = pending_tools.pop(tid)
+                            t_info["output_chars"] = len(res_text)
+                            t_info["output_text"] = res_text
+                            cur["tool_events"].append(t_info)
+                    elif blk.get("type") == "text":
+                        text_parts.append(str(blk.get("text") or ""))
+                prompt_text = "\n".join(text_parts).strip()
+            elif isinstance(content, str):
+                prompt_text = content.strip()
+            else:
+                prompt_text = ""
+
+            if prompt_text and not prompt_text.startswith("<"):
+                _flush_cur()
+                pending_tools.clear()
+                cur = {
+                    "prompt": prompt_text,
+                    "created_at": str(obj.get("timestamp") or ""),
+                    "steps": 0,
+                    "input_tok": 0,
+                    "cache_create_tok": 0,
+                    "cache_read_tok": 0,
+                    "output_tok": 0,
+                    "tool_tok": 0,
+                    "model": "claude-sonnet-4",
+                    "tool_counts": {"read": 0, "ranged_read": 0, "graph": 0, "grep": 0, "cmd": 0, "edit": 0},
+                    "tool_events": [],
+                }
+
+        elif evt_type == "assistant" and cur is not None:
+            cur["steps"] = int(cur["steps"]) + 1
+            if msg.get("model"):
+                cur["model"] = str(msg["model"])
+            usage = msg.get("usage")
+            if isinstance(usage, dict):
+                cur["input_tok"] = int(cur["input_tok"]) + int(usage.get("input_tokens") or 0)
+                cur["cache_create_tok"] = int(cur["cache_create_tok"]) + int(
+                    usage.get("cache_creation_input_tokens") or 0
+                )
+                cur["cache_read_tok"] = int(cur["cache_read_tok"]) + int(
+                    usage.get("cache_read_input_tokens") or 0
+                )
+                cur["output_tok"] = int(cur["output_tok"]) + int(usage.get("output_tokens") or 0)
+
+            if isinstance(content, list):
+                for blk in content:
+                    if not isinstance(blk, dict) or blk.get("type") != "tool_use":
+                        continue
+                    tname = str(blk.get("name") or "")
+                    tlow = tname.lower()
+                    targs = blk.get("input") if isinstance(blk.get("input"), dict) else {}
+                    tid = str(blk.get("id") or "")
+                    counts = cur["tool_counts"]
+                    if tlow in ("read", "read_file", "view_file"):
+                        if targs.get("offset") or targs.get("StartLine"):
+                            counts["ranged_read"] += 1
+                        else:
+                            counts["read"] += 1
+                    elif tlow in ("grep", "glob", "grep_search", "find_by_name"):
+                        counts["grep"] += 1
+                    elif tlow in ("bash", "run_command"):
+                        cmd_s = str(targs.get("command") or "")
+                        if "project-graph" in cmd_s or "tokwiz graph" in cmd_s or "tokwiz slice" in cmd_s:
+                            counts["graph"] += 1
+                        else:
+                            counts["cmd"] += 1
+                    elif tlow in ("edit", "write", "edit_file", "write_file"):
+                        counts["edit"] += 1
+
+                    ev = {
+                        "name": tlow,
+                        "args": targs,
+                        "output_chars": 0,
+                        "output_text": "",
+                    }
+                    if tid:
+                        pending_tools[tid] = ev
+                    else:
+                        cur["tool_events"].append(ev)
+
+    _flush_cur()
+    return turns
+
+
+def _parse_codex_transcript_turns(
+    transcript_path: Path,
+    target_workspace: Path,
+) -> List[Dict[str, object]]:
+    """Parse a Codex CLI `~/.codex/sessions/**/*.jsonl` log if its cwd matches `target_workspace`."""
+    ws_str = str(target_workspace.resolve())
+    try:
+        raw_lines = transcript_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+
+    cwd_matched = False
+    turns: List[Dict[str, object]] = []
+    cur: Optional[Dict[str, object]] = None
+    source_files = _scan_workspace_source_files(target_workspace)
+
+    def _flush() -> None:
+        if cur is None or not str(cur.get("prompt") or "").strip():
+            return
+        receipts, r_summary = _compute_turn_receipts(
+            list(cur["tool_events"]), target_workspace, source_files
+        )
+        in_tot = max(1, int(cur["input_tok"]))
+        out_tot = max(1, int(cur["output_tok"]))
+        turns.append(
+            {
+                "prompt": cur["prompt"],
+                "created_at": cur["created_at"],
+                "steps": max(1, int(cur["steps"])),
+                "input_tok": in_tot,
+                "output_tok": out_tot,
+                "reasoning_tok": int(cur["reasoning_tok"]),
+                "tool_tok": int(cur["tool_tok"]),
+                "total_tokens": in_tot + out_tot,
+                "real_total_tokens": in_tot + out_tot,
+                "receipts": receipts,
+                "receipt_saved_tokens": sum(int(r.get("saved_tokens") or 0) for r in receipts),
+                "tool_counts": dict(cur["tool_counts"]),
+                "transcript_path": str(transcript_path),
+                "usage_payload": {
+                    "agent_host": "codex",
+                    "model_id": "o4-mini",
+                    "real_steps": max(1, int(cur["steps"])),
+                    "telemetry_source": "TRANSCRIPT_MEASURED",
+                    "transcript_path": str(transcript_path),
+                    "receipts": receipts,
+                    "usage": {
+                        "input_tokens": in_tot,
+                        "cached_input_tokens": int(cur["cached_tok"]),
+                        "output_tokens": out_tot,
+                        "reasoning_tokens": int(cur["reasoning_tok"]),
+                        "tool_output_tokens": int(cur["tool_tok"]),
+                    },
+                },
+            }
+        )
+
+    for line in raw_lines:
+        ln = line.strip()
+        if not ln.startswith("{"):
+            continue
+        try:
+            obj = json.loads(ln)
+        except Exception:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        payload = obj.get("payload") if isinstance(obj.get("payload"), dict) else {}
+        if obj.get("type") in ("session_meta", "turn_context"):
+            c = str(payload.get("cwd") or obj.get("cwd") or "")
+            if c and Path(c).resolve() == Path(ws_str):
+                cwd_matched = True
+        if obj.get("type") == "event_msg":
+            ptype = str(payload.get("type") or "")
+            if ptype == "user_message" and payload.get("message"):
+                _flush()
+                cur = {
+                    "prompt": str(payload["message"]).strip(),
+                    "created_at": str(obj.get("timestamp") or ""),
+                    "steps": 1,
+                    "input_tok": 0,
+                    "cached_tok": 0,
+                    "output_tok": 0,
+                    "reasoning_tok": 0,
+                    "tool_tok": 0,
+                    "tool_counts": {"read": 0, "ranged_read": 0, "graph": 0, "grep": 0, "cmd": 0, "edit": 0},
+                    "tool_events": [],
+                }
+            elif ptype == "token_count" and cur is not None:
+                info = payload.get("info") if isinstance(payload.get("info"), dict) else {}
+                tu = info.get("last_token_usage") if isinstance(info.get("last_token_usage"), dict) else info
+                cur["input_tok"] = max(int(cur["input_tok"]), int(tu.get("input_tokens") or 0))
+                cur["cached_tok"] = max(int(cur["cached_tok"]), int(tu.get("cached_input_tokens") or 0))
+                cur["output_tok"] = max(int(cur["output_tok"]), int(tu.get("output_tokens") or 0))
+                cur["reasoning_tok"] = max(int(cur["reasoning_tok"]), int(tu.get("reasoning_output_tokens") or 0))
+        elif obj.get("type") == "response_item" and cur is not None:
+            if payload.get("type") == "function_call":
+                cur["steps"] = int(cur["steps"]) + 1
+                fname = str(payload.get("name") or "").lower()
+                cur["tool_events"].append({"name": fname, "args": {}, "output_chars": 0, "output_text": ""})
+
+    _flush()
+    return turns if cwd_matched else []
+
+
 def _find_workspace_transcript_turns(
     workspace_root: Path,
     brain_dir: Optional[Path] = None,
 ) -> List[Dict[str, object]]:
-    """Find the most recent Antigravity transcript matching `workspace_root` and parse its turns."""
+    """Find the most recent Antigravity, Claude Code, or Codex transcript matching `workspace_root`."""
+    candidates: List[Tuple[str, Path]] = []
+
+    # 1. Antigravity transcripts
     env_brain = os.environ.get("TOKWIZ_BRAIN_DIR")
     b_dir = brain_dir or (Path(env_brain) if env_brain else (Path.home() / ".gemini" / "antigravity" / "brain"))
-    if not b_dir.exists():
-        return []
-    candidates: List[Path] = []
-    for child in b_dir.iterdir():
-        if not child.is_dir():
-            continue
-        tf = child / ".system_generated" / "logs" / "transcript_full.jsonl"
-        if not tf.exists():
-            tf = child / ".system_generated" / "logs" / "transcript.jsonl"
-        if tf.exists():
-            candidates.append(tf)
-    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-    for tf in candidates[:15]:
-        turns = _parse_antigravity_transcript_turns(tf, workspace_root)
+    if b_dir.exists():
+        for child in b_dir.iterdir():
+            if not child.is_dir():
+                continue
+            tf = child / ".system_generated" / "logs" / "transcript_full.jsonl"
+            if not tf.exists():
+                tf = child / ".system_generated" / "logs" / "transcript.jsonl"
+            if tf.exists():
+                candidates.append(("antigravity", tf))
+
+    # 2. Claude Code transcripts (~/.claude/projects/<slug>/*.jsonl)
+    env_claude = os.environ.get("TOKWIZ_CLAUDE_PROJECTS_DIR")
+    c_root = Path(env_claude) if env_claude else (Path.home() / ".claude" / "projects")
+    slug_dir = c_root / _claude_project_slug(workspace_root)
+    if slug_dir.exists() and slug_dir.is_dir():
+        claude_files = sorted(slug_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime)
+        if claude_files:
+            agg_turns: List[Dict[str, object]] = []
+            for jf in claude_files[-10:]:
+                agg_turns.extend(_parse_claude_transcript_turns(jf, workspace_root))
+            if agg_turns:
+                return agg_turns
+
+    # 3. Codex CLI transcripts (~/.codex/sessions/**/*.jsonl)
+    env_codex = os.environ.get("TOKWIZ_CODEX_DIR")
+    x_root = Path(env_codex) if env_codex else (Path.home() / ".codex" / "sessions")
+    if x_root.exists() and x_root.is_dir():
+        for jf in x_root.rglob("*.jsonl"):
+            candidates.append(("codex", jf))
+
+    candidates.sort(key=lambda item: item[1].stat().st_mtime, reverse=True)
+    for kind, tf in candidates[:20]:
+        if kind == "antigravity":
+            turns = _parse_antigravity_transcript_turns(tf, workspace_root)
+        elif kind == "claude":
+            turns = _parse_claude_transcript_turns(tf, workspace_root)
+        else:
+            turns = _parse_codex_transcript_turns(tf, workspace_root)
         if turns:
             return turns
     return []
@@ -639,7 +944,7 @@ def sync_workspace_transcript_turns(
             bt_norm = _norm_prompt(str(bt.get("prompt", "")))
             if bt_norm and (rt_prompt_norm[:45] in bt_norm or bt_norm[:45] in rt_prompt_norm):
                 bt_usage = cal_mod.parse_usage_payload(bt["usage_payload"])
-                bt_tok = int(bt["total_tokens"])
+                bt_tok = int(bt.get("total_tokens") or bt.get("real_total_tokens") or 0)
                 bt_steps = int(bt["steps"])
                 bt_cost = cal_mod.compute_real_cost_usd(bt_usage, engine.pricing)
                 u_payload["real_baseline_tokens"] = bt_tok

@@ -72,12 +72,13 @@ def build_agent_command(
     agent: str,
     prompt: str,
     extra_args: Optional[List[str]] = None,
+    persist_sessions: bool = False,
 ) -> List[str]:
     """Build the headless CLI command for the requested coding agent."""
     extra = list(extra_args or [])
     low = agent.lower().strip()
     if low == "claude":
-        return [
+        cmd = [
             "claude",
             "-p",
             prompt,
@@ -87,9 +88,10 @@ def build_agent_command(
             "--setting-sources",
             "project,local",
             "--strict-mcp-config",
-            "--no-session-persistence",
-            *extra,
         ]
+        if not persist_sessions:
+            cmd.append("--no-session-persistence")
+        return [*cmd, *extra]
     if low == "codex":
         return ["codex", "exec", prompt, "--json", "--full-auto", *extra]
     if low == "gemini":
@@ -252,7 +254,12 @@ def run_live_ab(
             tid = str(task.get("id") or "task")
             tname = str(task.get("name") or tid)
             prompt = str(task["prompt"])
-            cmd = build_agent_command(agent, prompt, extra_args)
+            cmd = build_agent_command(
+                agent,
+                prompt,
+                extra_args,
+                persist_sessions=(workspace_dir is not None),
+            )
 
             runs: Dict[str, AgentRunResult] = {}
             for label, target_dir in (("baseline", baseline_dir), ("tokwiz", tokwiz_dir)):

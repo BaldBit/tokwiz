@@ -59,15 +59,17 @@ Modern AI coding agents (**Claude Code**, **OpenAI Codex CLI**, **Google Gemini 
 
 Every TokWiz benchmark measures **Net Workflow Savings**—explicitly deducting the token footprint of `SKILL.md` (<350 tokens) and Project Graph slices from total savings.
 
-### 1. Live IDE Session Head-to-Head Verification (`tokwiz verify-ab`)
-Measured directly from paired `.jsonl` session transcripts across two identical workspaces (`project-baseline` vs. `project-tokwiz`):
+### 1. Live IDE & Claude Code Session Head-to-Head Verification (`tokwiz verify-ab`)
+Measured directly from paired `.jsonl` session transcripts on the 25-file (~4,500-LOC, 193-node) sandbox (`project-baseline` vs. `project-tokwiz`):
 
-| Live Prompt Task | Baseline Steps | TokWiz Steps | Baseline Real Tok | TokWiz Real Tok | Verified Net Saved | Net Reduction % | Why Savings Occurred |
-| :--- | ---: | ---: | ---: | ---: | ---: | ---: | :--- |
-| **1. Multi-File Auth Refactor** (`validate_token` + `require_auth` + tests) | 33 | 18 | 25,062 | 11,237 | **+13,825** | **55.2%** | Graph query pinpointed callers in 1 step instead of 15 exploratory `grep`/`find`/read loops. |
-| **2. Single-Function Tax Edit** (`apply_regional_tax` in `order_engine.py`) | 12 | 12 | 6,225 | 5,737 | **+488** | **7.8%** | Small localized edit where prompt named the exact file; AST skeleton + ranged read still saved >2,100 file-read tokens. |
-| **3. Cross-Module Call-Chain Trace** (`process_checkout` → `validate_token`) | 2 | 5 | 2,591 | 2,059 | **+532** | **20.5%** | Graph query + ranged `L1-L25` read avoided ingesting full 347-line `order_engine.py`. |
-| **Live Session Total** | **47** | **35** | **33,878** | **19,033** | **+14,845** | **43.8%** | **100% unit tests passing in both workspaces** |
+| Live Prompt Task | Baseline Steps | TokWiz Steps | Baseline Real Tok | TokWiz Real Tok | Verified Net Saved | Net Reduction % |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| **1. Multi-File Auth Refactor** (`validate_token` + `require_auth` + tests) | 8 | 2 | 40,937 | 12,564 | **+28,373** | **69.3%** |
+| **2. Regional Tax Rule Edit** (`apply_regional_tax` `'JP'` + unit test) | 11 | 2 | 45,759 | 9,074 | **+36,685** | **80.2%** |
+| **3. Cross-Module Call-Chain Trace** (`process_checkout` → `validate_token`) | 4 | 6 | 15,335 | 14,322 | **+1,013** | **6.6%** |
+| **Live Session Total** | **23** | **10** | **102,031** | **35,960** | **+66,071** | **64.8%** |
+
+> **Cost & Correctness:** Baseline cost **`$0.2142`** vs. TokWiz **`$0.0487`** (**`77.3%` USD cost reduction**), with **100% unit tests passing** in both workspaces.
 
 ### 2. Multi-Scale Automated Benchmark Suite (`tokwiz benchmark`)
 
@@ -125,6 +127,9 @@ tokwiz test
 
 # Generate a <200-token working memory snapshot before /compact
 tokwiz checkpoint
+
+# Start the native stdio MCP server (auto-registered by `tokwiz init`)
+tokwiz mcp
 
 # View Forecasted vs. Real Cost variance, provenance badges & itemized receipts
 tokwiz stats
