@@ -384,7 +384,11 @@ class TelemetryStore:
             m_entry["saved_cost_usd"] = round(m_entry["saved_cost_usd"] + float(t["net_cost_saved_usd"]), 6)
 
         phase_breakdown = {
-            "context_input": sum(max(0, int(t["real_input_tokens"]) - int(t["real_tool_tokens"])) for t in turns),
+            "context_input": sum(
+                max(0, int(t["real_input_tokens"]) - int(t["real_cached_input_tokens"]) - int(t["real_tool_tokens"]))
+                for t in turns
+            ),
+            "cached_input": sum(int(t["real_cached_input_tokens"]) for t in turns),
             "graph_skill": sum(int(t["skill_overhead_tokens"]) for t in turns),
             "tool_output": sum(int(t["real_tool_tokens"]) for t in turns),
             "reasoning": sum(int(t["real_reasoning_tokens"]) for t in turns),

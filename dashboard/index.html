@@ -2069,7 +2069,8 @@
       const ct = getChartTheme();
 
       const entries = [
-        ["Context Input", phases.context_input || 0, "#38bdf8"],
+        ["New Context Input", phases.context_input || 0, "#38bdf8"],
+        ["Cached Input (KV 0.1x)", phases.cached_input || 0, "#64748b"],
         ["Graph & Skill", phases.graph_skill || 0, "#a78bfa"],
         ["Tool Output", phases.tool_output || 0, "#34d399"],
         ["Reasoning", phases.reasoning || 0, "#fbbf24"],
