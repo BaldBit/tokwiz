@@ -457,12 +457,21 @@
       z-index: 80;
       pointer-events: none;
     }
-    .help-section {
+    dialog.help-modal {
+      margin: auto;
+      width: min(1100px, 94vw);
+      max-height: 88vh;
+      overflow-y: auto;
       background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 20px;
-      margin-top: 22px;
+      color: var(--text);
+      border: 1px solid var(--accent);
+      border-radius: 14px;
+      padding: 22px 24px;
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.78);
+    }
+    dialog.help-modal::backdrop {
+      background: rgba(5, 8, 16, 0.78);
+      backdrop-filter: blur(4px);
     }
     .help-header {
       display: flex;
@@ -555,7 +564,7 @@
     <div class="controls">
       <button id="liveBtn" type="button" class="active">Live Workspace Data</button>
       <button id="demoBtn" type="button">Preview Sample Session</button>
-      <button id="helpBtn" type="button" onclick="document.getElementById('helpSection').scrollIntoView({ behavior: 'smooth' })">? Help &amp; Glossary</button>
+      <button id="helpBtn" type="button" onclick="document.getElementById('helpModal').showModal()">? Help &amp; Glossary</button>
     </div>
   </header>
 
@@ -743,15 +752,15 @@
     </table>
   </section>
 
-  <!-- Help, How TokWiz Works & Terminology Glossary -->
-  <section class="help-section" id="helpSection" aria-label="Help and Terminology Guide">
+  <!-- Large Help & Terminology Modal -->
+  <dialog class="help-modal" id="helpModal" aria-label="Help and Terminology Guide" onclick="if (event.target === this) this.close()">
     <div class="help-header">
       <div>
         <h2>📚 How TokWiz Works &amp; Terminology Guide</h2>
         <p class="help-sub">Everything TokWiz does behind the scenes to cut AI token bills without hurting code quality—explained in plain English.</p>
       </div>
       <div class="controls">
-        <button type="button" onclick="window.scrollTo({ top: 0, behavior: 'smooth' })">↑ Back to Top</button>
+        <button type="button" onclick="document.getElementById('helpModal').close()">✕ Close</button>
       </div>
     </div>
 
@@ -829,7 +838,7 @@
         Side-by-side test running the exact same prompt in a plain repo (<em>Baseline</em>) vs. a TokWiz repo, verifying both pass 100% of tests while measuring real token &amp; dollar savings.
       </div>
     </div>
-  </section>
+  </dialog>
 
   <script>
     const KIND_COLORS = {
