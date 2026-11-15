@@ -983,7 +983,8 @@
         <button type="button" class="docs-nav-btn" onclick="scrollDocTo('doc-math', this)">3. Math &amp; Formulas Explained</button>
         <button type="button" class="docs-nav-btn" onclick="scrollDocTo('doc-graph', this)">4. Graph &amp; Tool Guardrails</button>
         <button type="button" class="docs-nav-btn" onclick="scrollDocTo('doc-cli', this)">5. CLI &amp; MCP Reference</button>
-        <button type="button" class="docs-nav-btn" onclick="scrollDocTo('doc-glossary', this)">6. Dashboard Glossary</button>
+        <button type="button" class="docs-nav-btn" onclick="scrollDocTo('doc-statuses', this)">6. Statuses &amp; Badges</button>
+        <button type="button" class="docs-nav-btn" onclick="scrollDocTo('doc-glossary', this)">7. Dashboard Glossary</button>
       </nav>
 
       <div class="docs-body" id="docsBody">
@@ -1080,8 +1081,73 @@
           </table>
         </section>
 
+        <section class="docs-section" id="doc-statuses">
+          <h3>6. Statuses, Variance Tags &amp; Source Badges</h3>
+          <p>Every row in the <strong>Prompt Forecast &amp; Cost Reconciliation Audit Log</strong> shows a status badge explaining whether real usage matched the pre-prompt prediction, and a source badge showing where the usage numbers came from.</p>
+
+          <h4>Audit Log Status / Variance Tags</h4>
+          <table class="doc-table">
+            <thead>
+              <tr><th>Status Badge</th><th>What It Means (Plain English)</th><th>Exact Trigger Rule</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="tag ON_TARGET">ON_TARGET</span></td>
+                <td>Real token usage stayed within expected bounds.</td>
+                <td>None of the drift tags below were triggered.</td>
+              </tr>
+              <tr>
+                <td><span class="tag PENDING_FORECAST">PENDING_FORECAST</span></td>
+                <td>A pre-prompt forecast was created, and TokWiz is waiting for the turn to finish and reconcile actual billing.</td>
+                <td>Entry exists in <code>active-forecast.json</code> / <code>forecasts.jsonl</code> without a final post-turn reconciliation yet.</td>
+              </tr>
+              <tr>
+                <td><span class="tag EXTRA_TOOL_LOOPS">EXTRA_TOOL_LOOPS</span></td>
+                <td>The agent took noticeably more search/edit steps than planned.</td>
+                <td><code>real_steps &gt; forecast_steps + 2</code>, <code>&ge; 1.4&times;</code> forecast steps, and <code>real_total &gt; 1.15&times;</code> forecast.</td>
+              </tr>
+              <tr>
+                <td><span class="tag CACHE_MISS_DRIFT">CACHE_MISS_DRIFT</span></td>
+                <td>Prompt caching dropped, so repeated context was billed at full uncached input rates instead of discounted cache reads.</td>
+                <td><code>input_tokens &gt; 500</code> and <code>cached_input_tokens / input_tokens &lt; 0.45</code>.</td>
+              </tr>
+              <tr>
+                <td><span class="tag REASONING_SPIKE">REASONING_SPIKE</span></td>
+                <td>The model spent significantly more thinking/reasoning tokens than predicted.</td>
+                <td><code>real_reasoning &gt; 1.5&times; forecast_reasoning</code> (<code>+200</code> min) and <code>real_total &gt; 1.15&times;</code> forecast.</td>
+              </tr>
+              <tr>
+                <td><span class="tag UNBOUNDED_TOOL_OUTPUT">UNBOUNDED_TOOL_OUTPUT</span></td>
+                <td>Tool outputs (or cumulative multi-turn context reads) were much larger than the pre-prompt estimate.</td>
+                <td><code>real_tool_tokens &gt; 1.5&times; forecast_tool</code> (<code>+300</code> min) and <code>real_total &gt; 1.15&times;</code> forecast.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h4>Telemetry Source Badges</h4>
+          <table class="doc-table">
+            <thead>
+              <tr><th>Source Badge</th><th>Where the Numbers Came From</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="source-badge">API_EXACT</span></td>
+                <td>Exact token counts returned directly by the model/CLI API response (includes uncached input, cache reads, cache writes, and output).</td>
+              </tr>
+              <tr>
+                <td><span class="source-badge TRANSCRIPT_MEASURED">TRANSCRIPT_MEASURED</span></td>
+                <td>Measured automatically from local IDE/CLI session transcripts (<code>.jsonl</code> logs from Antigravity, Claude Code, or Codex).</td>
+              </tr>
+              <tr>
+                <td><span class="source-badge">HOOK_APPROX</span></td>
+                <td>Fallback estimate from live pre/post-tool hooks when neither API billing nor a session transcript is available.</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
         <section class="docs-section" id="doc-glossary">
-          <h3>6. Dashboard &amp; Table Glossary</h3>
+          <h3>7. Dashboard &amp; Table Glossary</h3>
           <div class="glossary-list">
             <div class="glossary-entry">
               <strong>Tokens (Input vs. Output)</strong>
