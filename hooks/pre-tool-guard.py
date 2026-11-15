@@ -349,11 +349,12 @@ def handle_pre_tool_use(
                     f"[TokWiz Guardrail] Blocked reading lockfile `{lf}` via shell. "
                     "Inspect `package.json`, `pyproject.toml`, or `Cargo.toml` instead."
                 )
-        grep_m = re.match(r"^\s*(?:rg|grep)\s+(?:-[A-Za-z]+\s+)*['\"]?([A-Za-z_][A-Za-z0-9_.:-]{1,64})['\"]?(?:\s|$)", cmd_str)
-        if grep_m:
-            hit = _try_graph_intercept_grep(workspace_root, grep_m.group(1))
-            if hit:
-                return _build_deny_response(hit)
+        for seg in re.split(r"\s*(?:&&|\|\||;|\n)\s*", cmd_str):
+            grep_m = re.match(r"^\s*(?:rg|grep)\s+(?:-[A-Za-z]+\s+)*['\"]?([A-Za-z_][A-Za-z0-9_.:-]{1,64})['\"]?(?:\s|$)", seg)
+            if grep_m:
+                hit = _try_graph_intercept_grep(workspace_root, grep_m.group(1))
+                if hit:
+                    return _build_deny_response(hit)
         return _build_allow_response()
 
     if tool_low in GREP_TOOL_NAMES:

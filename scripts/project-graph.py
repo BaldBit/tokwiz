@@ -19,6 +19,7 @@ import re
 import sqlite3
 import sys
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, Iterator, List, Optional, Set, Tuple
@@ -755,6 +756,97 @@ class ProjectGraph:
             token_count=estimate_tokens(final_str),
             elapsed_ms=elapsed_ms,
         )
+
+    def trace_path(
+        self,
+        source_query: str,
+        target_query: str,
+        max_hops: int = 8,
+        max_tokens: int = 450,
+    ) -> str:
+        """Find shortest call-chain path between source and target symbols with file:line coords."""
+        t0 = time.perf_counter()
+        self.build(force=False)
+        src_low = source_query.strip().lower()
+        tgt_low = target_query.strip().lower()
+        if not src_low or not tgt_low:
+            return "[TokWiz Trace] Both source and target symbols are required."
+
+        with self._connect() as conn:
+            node_rows = conn.execute(
+                "SELECT node_id, file_path, name, qualified_name, kind, start_line, end_line, signature FROM nodes"
+            ).fetchall()
+            edge_rows = conn.execute(
+                "SELECT source_id, target_id, edge_type FROM edges WHERE edge_type IN ('CALLS', 'IMPORTS')"
+            ).fetchall()
+
+        nodes_by_id: Dict[str, Dict[str, object]] = {str(r["node_id"]): dict(r) for r in node_rows}
+
+        def _match_ids(q: str) -> Set[str]:
+            exact = {
+                nid for nid, n in nodes_by_id.items()
+                if str(n["name"]).lower() == q or str(n["qualified_name"]).lower() == q
+            }
+            if exact:
+                return exact
+            return {
+                nid for nid, n in nodes_by_id.items()
+                if n["kind"] != "file" and (q in str(n["name"]).lower() or q in str(n["qualified_name"]).lower())
+            }
+
+        src_ids = _match_ids(src_low)
+        tgt_ids = _match_ids(tgt_low)
+        if not src_ids or not tgt_ids:
+            return f"[TokWiz Trace] Symbol not found (source={source_query!r}, target={target_query!r})."
+
+        adj: Dict[str, List[str]] = {}
+        for er in edge_rows:
+            s_id, d_id = str(er["source_id"]), str(er["target_id"])
+            adj.setdefault(s_id, []).append(d_id)
+
+        q_bfs: deque = deque()
+        parent: Dict[str, Optional[str]] = {}
+        for sid in sorted(src_ids):
+            q_bfs.append((sid, 0))
+            parent[sid] = None
+
+        found_end: Optional[str] = None
+        while q_bfs:
+            curr, depth = q_bfs.popleft()
+            if curr in tgt_ids and depth > 0:
+                found_end = curr
+                break
+            if depth >= max_hops:
+                continue
+            for nxt in adj.get(curr, []):
+                if nxt not in parent:
+                    parent[nxt] = curr
+                    q_bfs.append((nxt, depth + 1))
+
+        if found_end is None:
+            return (
+                f"[TokWiz Trace] No direct call path within {max_hops} hops between "
+                f"`{source_query}` and `{target_query}`. Try `tokwiz_slice` on each symbol."
+            )
+
+        chain: List[str] = []
+        cur_id: Optional[str] = found_end
+        while cur_id is not None:
+            chain.append(cur_id)
+            cur_id = parent.get(cur_id)
+        chain.reverse()
+
+        lines: List[str] = []
+        for idx, nid in enumerate(chain):
+            n = nodes_by_id[nid]
+            prefix = "→ " if idx > 0 else "  "
+            lines.append(
+                f"{prefix}{idx + 1}. {n['name']} ({n['file_path']}:L{n['start_line']}-L{n['end_line']}) :: {n['signature']}"
+            )
+            if estimate_tokens("\n".join(lines)) > max_tokens - 30:
+                break
+        elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+        return f"[TokWiz Trace: {source_query} -> {target_query} ({len(chain) - 1} hops, {elapsed_ms}ms)]\n" + "\n".join(lines)
 
     def export_graph_data(self, max_nodes: int = 120, auto_build: bool = True) -> Dict[str, object]:
         """Export nodes, edges, PageRank scores, and structural stats for the web visualizer."""

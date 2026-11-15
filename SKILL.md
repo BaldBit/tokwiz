@@ -8,11 +8,11 @@ description: Token optimization, Tier 2 codebase graph, ranged reads, and cost f
 **Safety Invariant:** Never omit details affecting correctness, security, user constraints, business logic, or test verification.
 
 ## Level 1: Safe (Always On)
-1. **Graph First:** Run `tokwiz graph query <sym>` or `tokwiz slice <sym>` before `grep`/`find`.
-2. **Ranged Reads:** Skeletonize code >150L or JSON/YAML/TOML/SQL >150L via `tokwiz skeleton <file>` before ranged reads.
+1. **Graph & MCP First:** Call `tokwiz_slice`, `tokwiz_trace`, or `tokwiz_graph_query` before `grep`/`find`.
+2. **Ranged Reads:** Skeletonize >150L files via `tokwiz_skeleton` before ranged reads.
 3. **Skip Waste:** Ignore lockfiles (`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `Cargo.lock`, `poetry.lock`), `node_modules/`, `dist/`, `build/`, `.min.js`.
 4. **Batch & Reuse:** Batch parallel calls. Never re-read unchanged files or repeat searches.
-5. **Impacted Tests & Checkpoints:** Run `tokwiz test` for diff-driven tests and `tokwiz checkpoint` before `/compact`.
+5. **Impacted Tests:** Run `tokwiz_test` for diff-driven tests and `tokwiz checkpoint` before `/compact`.
 6. **Concise & Cache-Safe:** Emit minimal diffs; keep early context immutable.
 
 ## Level 2: Adaptive (>2 Files or >25k Context)

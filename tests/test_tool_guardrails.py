@@ -215,6 +215,17 @@ class TestToolGuardrailsAndOutputFilter(unittest.TestCase):
         self.assertIn("Intercepted repo-wide grep", res["hookSpecificOutput"]["permissionDecisionReason"])
         self.assertIn("compute_invoice", res["hookSpecificOutput"]["permissionDecisionReason"])
 
+        res_chained = guard_mod.handle_pre_tool_use(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "git ls-files; grep -rn compute_invoice src/"},
+                "cwd": str(self.root),
+            },
+            default_root=self.root,
+        )
+        self.assertEqual(res_chained["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertIn("Intercepted repo-wide grep", res_chained["hookSpecificOutput"]["permissionDecisionReason"])
+
 
 if __name__ == "__main__":
     unittest.main()

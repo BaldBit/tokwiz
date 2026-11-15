@@ -98,6 +98,21 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
         },
     },
     {
+        "name": "tokwiz_trace",
+        "description": "Find shortest multi-hop call-chain path between two symbols with exact file:line coordinates.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "source": {"type": "string", "description": "Starting symbol name (e.g. process_checkout)"},
+                "target": {"type": "string", "description": "Target symbol name (e.g. validate_token)"},
+                "max_hops": {"type": "integer", "default": 8, "description": "Maximum call hops (default 8)"},
+                "max_tokens": {"type": "integer", "default": 450, "description": "Token budget (default 450)"},
+                "root": {"type": "string", "default": ".", "description": "Workspace root directory"},
+            },
+            "required": ["source", "target"],
+        },
+    },
+    {
         "name": "tokwiz_test",
         "description": "Run only tests impacted by current git diff and return a 1-line pass/fail receipt.",
         "inputSchema": {
@@ -172,6 +187,16 @@ def _execute_tool(name: str, args: Dict[str, Any], default_root: Path) -> str:
         estimator = est.TokenEstimator(root_dir=ws_root)
         res = estimator.estimate(str(args.get("prompt") or ""))
         return estimator.render_forecast_banner(res)
+
+    if name == "tokwiz_trace":
+        pg = _load_script("project_graph", "project-graph.py")
+        graph = pg.ProjectGraph(root_dir=ws_root)
+        return graph.trace_path(
+            str(args.get("source") or ""),
+            str(args.get("target") or ""),
+            max_hops=int(args.get("max_hops") or 8),
+            max_tokens=int(args.get("max_tokens") or 450),
+        )
 
     if name == "tokwiz_test":
         wops = _load_script("workspace_ops", "workspace-ops.py")
