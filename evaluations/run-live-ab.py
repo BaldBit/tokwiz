@@ -61,8 +61,10 @@ class AgentRunResult:
     input_tokens: int
     cached_tokens: int
     output_tokens: int
+    uncached_tokens: int
     total_tokens: int
     cost_usd: Optional[float]
+    num_turns: int = 0
     raw_error: str = ""
 
 
@@ -75,7 +77,19 @@ def build_agent_command(
     extra = list(extra_args or [])
     low = agent.lower().strip()
     if low == "claude":
-        return ["claude", "-p", prompt, "--output-format", "json", "--dangerously-skip-permissions", *extra]
+        return [
+            "claude",
+            "-p",
+            prompt,
+            "--output-format",
+            "json",
+            "--dangerously-skip-permissions",
+            "--setting-sources",
+            "project,local",
+            "--strict-mcp-config",
+            "--no-session-persistence",
+            *extra,
+        ]
     if low == "codex":
         return ["codex", "exec", prompt, "--json", "--full-auto", *extra]
     if low == "gemini":
@@ -231,6 +245,8 @@ def run_live_ab(
         paired_results: List[Dict[str, object]] = []
         base_sum = 0
         tok_sum = 0
+        base_uncached_sum = 0
+        tok_uncached_sum = 0
 
         for task in task_list:
             tid = str(task.get("id") or "task")
@@ -250,6 +266,7 @@ def run_live_ab(
                         input_tokens=0,
                         cached_tokens=0,
                         output_tokens=0,
+                        uncached_tokens=0,
                         total_tokens=0,
                         cost_usd=None,
                     )
@@ -259,6 +276,11 @@ def run_live_ab(
                 proc = exec_fn(cmd, target_dir, timeout_sec)
                 elapsed = round((time.perf_counter() - t0) * 1000.0, 1)
                 inp, cached, out, total, cost = parse_agent_usage_json(proc.stdout or "", agent)
+                uncached = inp + out
+                turns = 0
+                for obj in _extract_json_objects(proc.stdout or ""):
+                    if isinstance(obj.get("num_turns"), int):
+                        turns = int(obj["num_turns"])
                 runs[label] = AgentRunResult(
                     agent=agent,
                     workspace=label,
@@ -268,8 +290,10 @@ def run_live_ab(
                     input_tokens=inp,
                     cached_tokens=cached,
                     output_tokens=out,
+                    uncached_tokens=uncached,
                     total_tokens=total,
                     cost_usd=cost,
+                    num_turns=turns,
                     raw_error=(proc.stderr or "").strip()[:300] if proc.returncode != 0 else "",
                 )
 
@@ -277,8 +301,16 @@ def run_live_ab(
             t_res = runs["tokwiz"]
             saved = b_res.total_tokens - t_res.total_tokens
             pct = round((saved / b_res.total_tokens) * 100.0, 1) if b_res.total_tokens > 0 else 0.0
+            saved_uncached = b_res.uncached_tokens - t_res.uncached_tokens
+            pct_uncached = (
+                round((saved_uncached / b_res.uncached_tokens) * 100.0, 1)
+                if b_res.uncached_tokens > 0
+                else 0.0
+            )
             base_sum += b_res.total_tokens
             tok_sum += t_res.total_tokens
+            base_uncached_sum += b_res.uncached_tokens
+            tok_uncached_sum += t_res.uncached_tokens
 
             paired_results.append(
                 {
@@ -287,6 +319,8 @@ def run_live_ab(
                     "command_preview": " ".join(shlex.quote(c) for c in cmd[:4]) + " ...",
                     "baseline": asdict(b_res),
                     "tokwiz": asdict(t_res),
+                    "net_saved_uncached_tokens": saved_uncached,
+                    "net_uncached_reduction_pct": pct_uncached,
                     "net_saved_tokens": saved,
                     "net_reduction_pct": pct,
                 }
@@ -296,6 +330,12 @@ def run_live_ab(
         tok_tests = _run_workspace_tests(tokwiz_dir)
         total_saved = base_sum - tok_sum
         total_pct = round((total_saved / base_sum) * 100.0, 1) if base_sum > 0 else 0.0
+        total_uncached_saved = base_uncached_sum - tok_uncached_sum
+        total_uncached_pct = (
+            round((total_uncached_saved / base_uncached_sum) * 100.0, 1)
+            if base_uncached_sum > 0
+            else 0.0
+        )
 
         return {
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -303,6 +343,10 @@ def run_live_ab(
             "dry_run": dry_run,
             "workspace_dir": str(ws_root),
             "tasks": paired_results,
+            "baseline_uncached_tokens": base_uncached_sum,
+            "tokwiz_uncached_tokens": tok_uncached_sum,
+            "net_saved_uncached_tokens": total_uncached_saved,
+            "net_uncached_reduction_pct": total_uncached_pct,
             "baseline_total_tokens": base_sum,
             "tokwiz_total_tokens": tok_sum,
             "net_saved_tokens": total_saved,
@@ -319,15 +363,17 @@ def render_live_ab_markdown(report: Dict[str, object]) -> str:
     lines = [
         f"# TokWiz Live A/B Report (`{report['agent']}`)",
         "",
-        "| Task | Baseline Tokens | TokWiz Tokens | Net Saved | Reduction % | Baseline $ | TokWiz $ |",
+        "| Task | Baseline New Tok | TokWiz New Tok | New Saved | New Red. % | Baseline $ | TokWiz $ |",
         "| :--- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     b_cost_sum = 0.0
     t_cost_sum = 0.0
     has_cost = False
     for item in report.get("tasks", []):
-        b_tok = item["baseline"]["total_tokens"]
-        t_tok = item["tokwiz"]["total_tokens"]
+        b_new = item["baseline"].get("uncached_tokens", item["baseline"]["total_tokens"])
+        t_new = item["tokwiz"].get("uncached_tokens", item["tokwiz"]["total_tokens"])
+        saved_new = item.get("net_saved_uncached_tokens", item["net_saved_tokens"])
+        pct_new = item.get("net_uncached_reduction_pct", item["net_reduction_pct"])
         b_cost = item["baseline"].get("cost_usd")
         t_cost = item["tokwiz"].get("cost_usd")
         if isinstance(b_cost, (int, float)) and isinstance(t_cost, (int, float)):
@@ -338,19 +384,27 @@ def render_live_ab_markdown(report: Dict[str, object]) -> str:
         else:
             cost_cols = " — | — |"
         lines.append(
-            f"| {item['task_name']} | {b_tok:,} | {t_tok:,} | "
-            f"{item['net_saved_tokens']:+,} | {item['net_reduction_pct']:.1f}% |{cost_cols}"
+            f"| {item['task_name']} | {b_new:,} | {t_new:,} | "
+            f"{saved_new:+,} | {pct_new:.1f}% |{cost_cols}"
         )
     total_cost_cols = f" **${b_cost_sum:.3f}** | **${t_cost_sum:.3f}** |" if has_cost else " — | — |"
+    b_new_tot = report.get("baseline_uncached_tokens", report["baseline_total_tokens"])
+    t_new_tot = report.get("tokwiz_uncached_tokens", report["tokwiz_total_tokens"])
+    saved_new_tot = report.get("net_saved_uncached_tokens", report["net_saved_tokens"])
+    pct_new_tot = report.get("net_uncached_reduction_pct", report["net_reduction_pct"])
     lines.append(
-        f"| **Total** | **{report['baseline_total_tokens']:,}** | **{report['tokwiz_total_tokens']:,}** | "
-        f"**{report['net_saved_tokens']:+,}** | **{report['net_reduction_pct']:.1f}%** |{total_cost_cols}"
+        f"| **Total** | **{b_new_tot:,}** | **{t_new_tot:,}** | "
+        f"**{saved_new_tot:+,}** | **{pct_new_tot:.1f}%** |{total_cost_cols}"
     )
     lines.append("")
     if has_cost and b_cost_sum > 0:
         cost_saved = b_cost_sum - t_cost_sum
         cost_pct = (cost_saved / b_cost_sum) * 100.0
         lines.append(f"- **Net Cost Saved:** `${cost_saved:+.3f}` ({cost_pct:+.1f}%)")
+    lines.append(
+        f"- Total Tokens (incl. 0.1x cache reads): Baseline `{report['baseline_total_tokens']:,}` vs. "
+        f"TokWiz `{report['tokwiz_total_tokens']:,}`"
+    )
     lines.append(
         f"- Baseline Tests Passed: `{report['baseline_tests']['passed']}` | "
         f"TokWiz Tests Passed: `{report['tokwiz_tests']['passed']}`"
