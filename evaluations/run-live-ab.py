@@ -125,7 +125,9 @@ def parse_agent_usage_json(stdout_text: str, agent: str) -> Tuple[int, int, int,
             cost = float(obj["total_cost_usd"])
         usage = obj.get("usage")
         if isinstance(usage, dict):
-            inp += int(usage.get("input_tokens") or usage.get("prompt_tokens") or 0)
+            inp += int(usage.get("input_tokens") or usage.get("prompt_tokens") or 0) + int(
+                usage.get("cache_creation_input_tokens") or 0
+            )
             cached += int(
                 usage.get("cache_read_input_tokens")
                 or usage.get("cached_tokens")
@@ -317,21 +319,38 @@ def render_live_ab_markdown(report: Dict[str, object]) -> str:
     lines = [
         f"# TokWiz Live A/B Report (`{report['agent']}`)",
         "",
-        "| Task | Baseline Tokens | TokWiz Tokens | Net Saved | Reduction % |",
-        "| :--- | ---: | ---: | ---: | ---: |",
+        "| Task | Baseline Tokens | TokWiz Tokens | Net Saved | Reduction % | Baseline $ | TokWiz $ |",
+        "| :--- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
+    b_cost_sum = 0.0
+    t_cost_sum = 0.0
+    has_cost = False
     for item in report.get("tasks", []):
         b_tok = item["baseline"]["total_tokens"]
         t_tok = item["tokwiz"]["total_tokens"]
+        b_cost = item["baseline"].get("cost_usd")
+        t_cost = item["tokwiz"].get("cost_usd")
+        if isinstance(b_cost, (int, float)) and isinstance(t_cost, (int, float)):
+            has_cost = True
+            b_cost_sum += float(b_cost)
+            t_cost_sum += float(t_cost)
+            cost_cols = f" ${b_cost:.3f} | ${t_cost:.3f} |"
+        else:
+            cost_cols = " — | — |"
         lines.append(
             f"| {item['task_name']} | {b_tok:,} | {t_tok:,} | "
-            f"{item['net_saved_tokens']:+,} | {item['net_reduction_pct']:.1f}% |"
+            f"{item['net_saved_tokens']:+,} | {item['net_reduction_pct']:.1f}% |{cost_cols}"
         )
+    total_cost_cols = f" **${b_cost_sum:.3f}** | **${t_cost_sum:.3f}** |" if has_cost else " — | — |"
     lines.append(
         f"| **Total** | **{report['baseline_total_tokens']:,}** | **{report['tokwiz_total_tokens']:,}** | "
-        f"**{report['net_saved_tokens']:+,}** | **{report['net_reduction_pct']:.1f}%** |"
+        f"**{report['net_saved_tokens']:+,}** | **{report['net_reduction_pct']:.1f}%** |{total_cost_cols}"
     )
     lines.append("")
+    if has_cost and b_cost_sum > 0:
+        cost_saved = b_cost_sum - t_cost_sum
+        cost_pct = (cost_saved / b_cost_sum) * 100.0
+        lines.append(f"- **Net Cost Saved:** `${cost_saved:+.3f}` ({cost_pct:+.1f}%)")
     lines.append(
         f"- Baseline Tests Passed: `{report['baseline_tests']['passed']}` | "
         f"TokWiz Tests Passed: `{report['tokwiz_tests']['passed']}`"
