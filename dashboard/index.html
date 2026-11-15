@@ -744,10 +744,6 @@
         <svg class="icon" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
         Live Data
       </button>
-      <button id="demoBtn" type="button">
-        <svg class="icon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        Sample Session
-      </button>
       <button id="themeToggleBtn" type="button" title="Toggle Dark / Light theme">
         <svg class="icon" id="themeIconSun" viewBox="0 0 24 24" style="display:none"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
         <svg class="icon" id="themeIconMoon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -1191,46 +1187,6 @@
       type: "#f472b6",
       function: "#34d399",
       method: "#fbbf24"
-    };
-
-    const SAMPLE_DATA = {
-      total_turns: 6,
-      total_forecasts: 6,
-      guardrail_events_count: 4,
-      guardrail_tokens_saved: 14200,
-      total_forecast_tokens: 24200,
-      total_real_tokens: 24950,
-      total_unoptimized_tokens: 79400,
-      net_tokens_saved: 52710,
-      avg_reduction_pct: 66.4,
-      total_forecast_cost_usd: 0.0812,
-      total_real_cost_usd: 0.0854,
-      total_unoptimized_cost_usd: 0.2940,
-      net_cost_saved_usd: 0.2086,
-      total_cost_delta_usd: 0.0042,
-      mape_pct: 11.4,
-      recent_mape_pct: 8.2,
-      cache_hit_ratio_pct: 81.5,
-      phase_breakdown: {
-        context_input: 8900,
-        graph_skill: 1740,
-        tool_output: 6400,
-        reasoning: 4710,
-        output: 3200
-      },
-      model_breakdown: {
-        "claude-sonnet-4": { turns: 3, forecast_cost_usd: 0.048, real_cost_usd: 0.051, saved_cost_usd: 0.132 },
-        "o4-mini": { turns: 2, forecast_cost_usd: 0.019, real_cost_usd: 0.020, saved_cost_usd: 0.046 },
-        "gemini-2.5-pro": { turns: 1, forecast_cost_usd: 0.014, real_cost_usd: 0.0144, saved_cost_usd: 0.0306 }
-      },
-      turns: [
-        { forecast_id: "tw_91a04c11", prompt: "Refactor validateToken to support API key headers", profile_code: "C", optimization_level: 2, forecast_total_tokens: 4200, real_total_tokens: 4680, unoptimized_baseline_tokens: 15200, net_tokens_saved: 10230, forecast_cost_usd: 0.0142, real_cost_usd: 0.0168, cost_delta_usd: 0.0026, ape_pct: 15.5, variance_tags: ["EXTRA_TOOL_LOOPS"] },
-        { forecast_id: "tw_91a04c12", prompt: "Fix failing pytest auth middleware expiration check", profile_code: "D", optimization_level: 2, forecast_total_tokens: 5100, real_total_tokens: 5490, unoptimized_baseline_tokens: 18400, net_tokens_saved: 12620, forecast_cost_usd: 0.0170, real_cost_usd: 0.0189, cost_delta_usd: 0.0019, ape_pct: 10.1, variance_tags: ["ON_TARGET"] },
-        { forecast_id: "tw_91a04c13", prompt: "Explain SessionManager token rotation flow", profile_code: "A", optimization_level: 1, forecast_total_tokens: 1400, real_total_tokens: 1320, unoptimized_baseline_tokens: 3600, net_tokens_saved: 1990, forecast_cost_usd: 0.0048, real_cost_usd: 0.0044, cost_delta_usd: -0.0004, ape_pct: 9.1, variance_tags: ["ON_TARGET"] },
-        { forecast_id: "tw_91a04c14", prompt: "Update requireAuth to log rejected IP addresses", profile_code: "B", optimization_level: 1, forecast_total_tokens: 2900, real_total_tokens: 3010, unoptimized_baseline_tokens: 9200, net_tokens_saved: 5900, forecast_cost_usd: 0.0098, real_cost_usd: 0.0103, cost_delta_usd: 0.0005, ape_pct: 4.9, variance_tags: ["ON_TARGET"] },
-        { forecast_id: "tw_91a04c15", prompt: "Add Personalized PageRank damping factor flag", profile_code: "C", optimization_level: 2, forecast_total_tokens: 4800, real_total_tokens: 4650, unoptimized_baseline_tokens: 14900, net_tokens_saved: 9960, forecast_cost_usd: 0.0164, real_cost_usd: 0.0155, cost_delta_usd: -0.0009, ape_pct: 5.8, variance_tags: ["ON_TARGET"] },
-        { forecast_id: "tw_91a04c16", prompt: "Audit repository lockfile guardrails and tests", profile_code: "C", optimization_level: 2, forecast_total_tokens: 5800, real_total_tokens: 5800, unoptimized_baseline_tokens: 18100, net_tokens_saved: 12010, forecast_cost_usd: 0.0190, real_cost_usd: 0.0195, cost_delta_usd: 0.0005, ape_pct: 2.6, variance_tags: ["ON_TARGET"] }
-      ]
     };
 
     /* ==================== RETINA / HIDPI CANVAS HELPER ==================== */
@@ -2229,16 +2185,11 @@
       });
     }
 
-    function renderDashboard(data, isDemoMode) {
+    function renderDashboard(data) {
       const badge = document.getElementById("modeBadge");
-      if (isDemoMode) {
-        badge.textContent = "● Sample Session Preview (Not Live Data)";
-        badge.className = "mode-badge demo";
-      } else {
-        const wsName = data.workspace_name ? ` (${data.workspace_name})` : "";
-        badge.textContent = `● Live Workspace Telemetry${wsName}`;
-        badge.className = "mode-badge live";
-      }
+      const wsName = data.workspace_name ? ` (${data.workspace_name})` : "";
+      badge.textContent = `● Live Workspace Telemetry${wsName}`;
+      badge.className = "mode-badge live";
 
       const turnsCount = Number(data.total_turns || 0);
       const forecastsCount = Number(data.total_forecasts || 0);
@@ -2280,13 +2231,9 @@
       const reconciledIds = new Set((data.turns || []).map(t => t.forecast_id));
       const pendingForecasts = (data.forecasts || []).filter(f => !reconciledIds.has(f.forecast_id));
 
-      const abInfo = data.ab_comparison;
-      const abPct = abInfo && typeof abInfo.total_reduction_pct === "number" ? Number(abInfo.total_reduction_pct) : null;
       document.getElementById("kpiReduction").textContent = `${Number(data.avg_reduction_pct || 0).toFixed(1)}%`;
       document.getElementById("kpiTurnsSub").textContent = turnsCount > 0
-        ? (abPct !== null
-            ? `${turnsCount} reconciled (est.) · A/B Verified: ${abPct.toFixed(1)}%`
-            : `${turnsCount} reconciled (est.) · ${pendingForecasts.length} pending forecast(s)`)
+        ? `${turnsCount} reconciled · ${pendingForecasts.length} pending forecast(s)`
         : forecastsCount > 0
           ? `Est. reduction across ${forecastsCount} forecast(s)`
           : "0 turns recorded in telemetry.db";
@@ -2458,7 +2405,6 @@
 
     async function loadLiveStats() {
       document.getElementById("liveBtn").classList.add("active");
-      document.getElementById("demoBtn").classList.remove("active");
       try {
         const [statsRes, graphRes] = await Promise.all([
           fetch("/api/stats"),
@@ -2467,22 +2413,20 @@
         const statsData = await statsRes.json();
         const graphData = await graphRes.json();
 
-        renderDashboard(statsData, false);
+        renderDashboard(statsData);
         if (graphData && graphData.nodes) {
           init3DGraph(graphData);
         }
       } catch (_err) {
-        renderDashboard({ total_turns: 0, turns: [], forecasts: [] }, false);
+        renderDashboard({ total_turns: 0, turns: [], forecasts: [] });
       }
     }
 
     let _lastStatsPayload = null;
-    let _lastIsSample = false;
     const _origRenderDashboard = renderDashboard;
-    renderDashboard = function (data, isSample) {
+    renderDashboard = function (data) {
       _lastStatsPayload = data;
-      _lastIsSample = isSample;
-      return _origRenderDashboard(data, isSample);
+      return _origRenderDashboard(data);
     };
 
     function scrollDocTo(sectionId, btn) {
@@ -2511,7 +2455,7 @@
         Chart.defaults.borderColor = isLight ? "#e2e8f0" : "#232d42";
       }
       if (_lastStatsPayload) {
-        _origRenderDashboard(_lastStatsPayload, _lastIsSample);
+        _origRenderDashboard(_lastStatsPayload);
       }
       if (typeof draw3DScene === "function") {
         try { draw3DScene(); } catch (_e) {}
@@ -2531,11 +2475,6 @@
     });
 
     document.getElementById("liveBtn").addEventListener("click", loadLiveStats);
-    document.getElementById("demoBtn").addEventListener("click", () => {
-      document.getElementById("demoBtn").classList.add("active");
-      document.getElementById("liveBtn").classList.remove("active");
-      renderDashboard(SAMPLE_DATA, true);
-    });
 
     loadLiveStats();
   </script>
