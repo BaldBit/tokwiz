@@ -1547,8 +1547,9 @@
         ctx.arc(item.sx, item.sy, item.r, 0, Math.PI * 2);
         ctx.fill();
 
+        const isLightTheme = document.documentElement.getAttribute("data-theme") === "light";
         if (isSelected || isHovered || matchesSearch) {
-          ctx.strokeStyle = "#ffffff";
+          ctx.strokeStyle = isLightTheme ? "#0284c7" : "#ffffff";
           ctx.lineWidth = 2.2;
           ctx.stroke();
         }
@@ -1585,16 +1586,22 @@
         }
         placedLabelBoxes.push(box);
 
+        const isLightTheme = document.documentElement.getAttribute("data-theme") === "light";
         ctx.save();
-        ctx.fillStyle = isSelected ? "rgba(14, 29, 58, 0.95)" : "rgba(9, 14, 26, 0.88)";
-        ctx.strokeStyle = isSelected ? "#38bdf8" : "rgba(30, 44, 71, 0.9)";
+        if (isLightTheme) {
+          ctx.fillStyle = isSelected ? "rgba(224, 242, 254, 0.96)" : "rgba(255, 255, 255, 0.92)";
+          ctx.strokeStyle = isSelected ? "#0284c7" : "rgba(15, 23, 42, 0.16)";
+        } else {
+          ctx.fillStyle = isSelected ? "rgba(14, 29, 58, 0.95)" : "rgba(9, 14, 26, 0.88)";
+          ctx.strokeStyle = isSelected ? "#38bdf8" : "rgba(30, 44, 71, 0.9)";
+        }
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.roundRect(box.x1, box.y1, box.x2 - box.x1, boxH, 4);
         ctx.fill();
         ctx.stroke();
 
-        ctx.fillStyle = isSelected ? "#38bdf8" : "#eef2ff";
+        ctx.fillStyle = isLightTheme ? (isSelected ? "#0369a1" : "#0f172a") : (isSelected ? "#38bdf8" : "#eef2ff");
         ctx.fillText(n.name, lx + 1, ly + 13);
         ctx.restore();
       }
@@ -1812,11 +1819,29 @@
       modelCost: null
     };
 
-    const GRID_COLOR = "rgba(30, 44, 71, 0.65)";
-    const TICK_COLOR = "#8b9dc3";
+    function getChartTheme() {
+      const isLight = document.documentElement.getAttribute("data-theme") === "light";
+      return isLight ? {
+        grid: "rgba(15, 23, 42, 0.08)",
+        tick: "#475569",
+        text: "#0f172a",
+        tooltipBg: "#ffffff",
+        tooltipBorder: "#cbd5e1",
+        tooltipTitle: "#0f172a",
+        tooltipBody: "#334155"
+      } : {
+        grid: "rgba(30, 44, 71, 0.65)",
+        tick: "#94a3b8",
+        text: "#eef2ff",
+        tooltipBg: "#090e1a",
+        tooltipBorder: "#1e2c47",
+        tooltipTitle: "#f1f5f9",
+        tooltipBody: "#cbd5e1"
+      };
+    }
 
     if (window.Chart) {
-      Chart.defaults.color = TICK_COLOR;
+      Chart.defaults.color = getChartTheme().tick;
       Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif';
       Chart.defaults.font.size = 11.5;
     }
@@ -1833,6 +1858,7 @@
       const canvas = document.getElementById("hubsChartCanvas");
       destroyChart("hubs");
       if (!window.Chart || !top.length) return;
+      const ct = getChartTheme();
 
       chartInstances.hubs = new Chart(canvas, {
         type: "bar",
@@ -1853,8 +1879,10 @@
           plugins: {
             legend: { display: false },
             tooltip: {
-              backgroundColor: "#090e1a",
-              borderColor: "#1e2c47",
+              backgroundColor: ct.tooltipBg,
+              borderColor: ct.tooltipBorder,
+              titleColor: ct.tooltipTitle,
+              bodyColor: ct.tooltipBody,
               borderWidth: 1,
               callbacks: {
                 label: (ctx) => ` PageRank Score: ${ctx.parsed.x.toFixed(2)}`
@@ -1864,13 +1892,13 @@
           scales: {
             x: {
               beginAtZero: true,
-              grid: { color: GRID_COLOR },
-              ticks: { color: TICK_COLOR },
-              title: { display: true, text: "PageRank Centrality Score", color: TICK_COLOR, font: { size: 10.5 } }
+              grid: { color: ct.grid },
+              ticks: { color: ct.tick },
+              title: { display: true, text: "PageRank Centrality Score", color: ct.tick, font: { size: 10.5 } }
             },
             y: {
               grid: { display: false },
-              ticks: { color: "#eef2ff", font: { weight: "600", size: 11 } }
+              ticks: { color: ct.text, font: { weight: "600", size: 11 } }
             }
           }
         }
@@ -1887,6 +1915,7 @@
         return;
       }
       emptyEl.style.display = "none";
+      const ct = getChartTheme();
 
       const labels = turns.map((t, i) => `T${i + 1} (${t.forecast_id.slice(-4)})`);
       const forecastVals = turns.map(t => Number(t.forecast_cost_usd || 0));
@@ -1940,11 +1969,13 @@
           plugins: {
             legend: {
               position: "top",
-              labels: { color: "#eef2ff", usePointStyle: true, boxWidth: 8 }
+              labels: { color: ct.text, usePointStyle: true, boxWidth: 8 }
             },
             tooltip: {
-              backgroundColor: "#090e1a",
-              borderColor: "#1e2c47",
+              backgroundColor: ct.tooltipBg,
+              borderColor: ct.tooltipBorder,
+              titleColor: ct.tooltipTitle,
+              bodyColor: ct.tooltipBody,
               borderWidth: 1,
               callbacks: {
                 label: (ctx) => ` ${ctx.dataset.label}: $${Number(ctx.parsed.y).toFixed(4)}`
@@ -1953,17 +1984,17 @@
           },
           scales: {
             x: {
-              grid: { color: GRID_COLOR },
-              ticks: { color: "#eef2ff" },
-              title: { display: true, text: "Prompt Turn (ID)", color: TICK_COLOR }
+              grid: { color: ct.grid },
+              ticks: { color: ct.text },
+              title: { display: true, text: "Prompt Turn (ID)", color: ct.tick }
             },
             y: {
-              grid: { color: GRID_COLOR },
+              grid: { color: ct.grid },
               ticks: {
-                color: TICK_COLOR,
+                color: ct.tick,
                 callback: (val) => `$${Number(val).toFixed(3)}`
               },
-              title: { display: true, text: "Cost ($ USD)", color: TICK_COLOR }
+              title: { display: true, text: "Cost ($ USD)", color: ct.tick }
             }
           }
         }
@@ -1980,6 +2011,7 @@
         return;
       }
       emptyEl.style.display = "none";
+      const ct = getChartTheme();
 
       const labels = turns.map((t, i) => `T${i + 1} [P-${t.profile_code}]`);
       chartInstances.tokensTimeline = new Chart(canvas, {
@@ -2012,11 +2044,13 @@
           plugins: {
             legend: {
               position: "top",
-              labels: { color: "#eef2ff", usePointStyle: true, boxWidth: 8 }
+              labels: { color: ct.text, usePointStyle: true, boxWidth: 8 }
             },
             tooltip: {
-              backgroundColor: "#090e1a",
-              borderColor: "#1e2c47",
+              backgroundColor: ct.tooltipBg,
+              borderColor: ct.tooltipBorder,
+              titleColor: ct.tooltipTitle,
+              bodyColor: ct.tooltipBody,
               borderWidth: 1,
               callbacks: {
                 label: (ctx) => ` ${ctx.dataset.label}: ${Number(ctx.parsed.y).toLocaleString()} tokens`
@@ -2025,18 +2059,18 @@
           },
           scales: {
             x: {
-              grid: { color: GRID_COLOR },
-              ticks: { color: "#eef2ff" },
-              title: { display: true, text: "Prompt Turn & Complexity Profile", color: TICK_COLOR }
+              grid: { color: ct.grid },
+              ticks: { color: ct.text },
+              title: { display: true, text: "Prompt Turn & Complexity Profile", color: ct.tick }
             },
             y: {
               beginAtZero: true,
-              grid: { color: GRID_COLOR },
+              grid: { color: ct.grid },
               ticks: {
-                color: TICK_COLOR,
+                color: ct.tick,
                 callback: (val) => `${(Number(val) / 1000).toFixed(0)}k`
               },
-              title: { display: true, text: "Token Count", color: TICK_COLOR }
+              title: { display: true, text: "Token Count", color: ct.tick }
             }
           }
         }
@@ -2054,6 +2088,7 @@
         return;
       }
       emptyEl.style.display = "none";
+      const ct = getChartTheme();
 
       const entries = [
         ["Context Input", phases.context_input || 0, "#38bdf8"],
@@ -2082,8 +2117,10 @@
           plugins: {
             legend: { display: false },
             tooltip: {
-              backgroundColor: "#090e1a",
-              borderColor: "#1e2c47",
+              backgroundColor: ct.tooltipBg,
+              borderColor: ct.tooltipBorder,
+              titleColor: ct.tooltipTitle,
+              bodyColor: ct.tooltipBody,
               borderWidth: 1,
               callbacks: {
                 label: (ctx) => ` ${Number(ctx.parsed.x).toLocaleString()} tokens (${((ctx.parsed.x / total) * 100).toFixed(1)}%)`
@@ -2093,17 +2130,17 @@
           scales: {
             x: {
               beginAtZero: true,
-              grid: { color: GRID_COLOR },
+              grid: { color: ct.grid },
               ticks: {
-                color: TICK_COLOR,
+                color: ct.tick,
                 callback: (val) => Number(val).toLocaleString()
               },
-              title: { display: true, text: "Tokens Consumed", color: TICK_COLOR }
+              title: { display: true, text: "Tokens Consumed", color: ct.tick }
             },
             y: {
               grid: { display: false },
-              ticks: { color: "#eef2ff", font: { weight: "600" } },
-              title: { display: true, text: "Execution Phase", color: TICK_COLOR }
+              ticks: { color: ct.text, font: { weight: "600" } },
+              title: { display: true, text: "Execution Phase", color: ct.tick }
             }
           }
         }
@@ -2121,6 +2158,7 @@
         return;
       }
       emptyEl.style.display = "none";
+      const ct = getChartTheme();
 
       chartInstances.modelCost = new Chart(canvas, {
         type: "bar",
@@ -2154,11 +2192,13 @@
           plugins: {
             legend: {
               position: "top",
-              labels: { color: "#eef2ff", usePointStyle: true, boxWidth: 8 }
+              labels: { color: ct.text, usePointStyle: true, boxWidth: 8 }
             },
             tooltip: {
-              backgroundColor: "#090e1a",
-              borderColor: "#1e2c47",
+              backgroundColor: ct.tooltipBg,
+              borderColor: ct.tooltipBorder,
+              titleColor: ct.tooltipTitle,
+              bodyColor: ct.tooltipBody,
               borderWidth: 1,
               callbacks: {
                 label: (ctx) => ` ${ctx.dataset.label}: $${Number(ctx.parsed.y).toFixed(4)}`
@@ -2167,18 +2207,18 @@
           },
           scales: {
             x: {
-              grid: { color: GRID_COLOR },
-              ticks: { color: "#eef2ff", font: { weight: "600" } },
-              title: { display: true, text: "AI Model / Provider", color: TICK_COLOR }
+              grid: { color: ct.grid },
+              ticks: { color: ct.text, font: { weight: "600" } },
+              title: { display: true, text: "AI Model / Provider", color: ct.tick }
             },
             y: {
               beginAtZero: true,
-              grid: { color: GRID_COLOR },
+              grid: { color: ct.grid },
               ticks: {
-                color: TICK_COLOR,
+                color: ct.tick,
                 callback: (val) => `$${Number(val).toFixed(3)}`
               },
-              title: { display: true, text: "Cumulative Cost ($ USD)", color: TICK_COLOR }
+              title: { display: true, text: "Cumulative Cost ($ USD)", color: ct.tick }
             }
           }
         }
@@ -2464,8 +2504,8 @@
       if (_lastStatsPayload) {
         _origRenderDashboard(_lastStatsPayload, _lastIsSample);
       }
-      if (typeof draw3DGraph === "function") {
-        try { draw3DGraph(); } catch (_e) {}
+      if (typeof draw3DScene === "function") {
+        try { draw3DScene(); } catch (_e) {}
       }
     }
 
