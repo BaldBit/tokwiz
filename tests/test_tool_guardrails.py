@@ -197,6 +197,24 @@ class TestToolGuardrailsAndOutputFilter(unittest.TestCase):
         )
         self.assertEqual(third["hookSpecificOutput"]["permissionDecision"], "allow")
 
+    def test_grep_interception_on_indexed_symbol(self) -> None:
+        pg = guard_mod._load_project_graph()
+        src = self.root / "billing.py"
+        src.write_text("def compute_invoice(amount: float) -> float:\n    return amount * 1.1\n", encoding="utf-8")
+        pg.ProjectGraph(root_dir=self.root).build()
+
+        res = guard_mod.handle_pre_tool_use(
+            {
+                "tool_name": "Grep",
+                "tool_input": {"pattern": "compute_invoice"},
+                "cwd": str(self.root),
+            },
+            default_root=self.root,
+        )
+        self.assertEqual(res["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertIn("Intercepted repo-wide grep", res["hookSpecificOutput"]["permissionDecisionReason"])
+        self.assertIn("compute_invoice", res["hookSpecificOutput"]["permissionDecisionReason"])
+
 
 if __name__ == "__main__":
     unittest.main()

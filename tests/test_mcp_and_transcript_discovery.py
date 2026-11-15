@@ -81,6 +81,13 @@ class TestMCPServerAndTranscriptDiscovery(unittest.TestCase):
         self.assertFalse(st["result"]["isError"])
         self.assertIn("total_turns", st["result"]["content"][0]["text"])
 
+        tt = mcp_mod.handle_jsonrpc_message(
+            {"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "tokwiz_test", "arguments": {}}},
+            self.ws,
+        )
+        self.assertFalse(tt["result"]["isError"])
+        self.assertIn("impacted tests", tt["result"]["content"][0]["text"])
+
         # Verify `tokwiz init` registers MCP configs non-destructively
         (self.ws / ".mcp.json").write_text(json.dumps({"mcpServers": {"custom": {"command": "echo"}}}), encoding="utf-8")
         subprocess.run(

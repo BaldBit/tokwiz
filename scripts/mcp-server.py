@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import io
 import json
 import sys
+from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -96,6 +98,17 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
         },
     },
     {
+        "name": "tokwiz_test",
+        "description": "Run only tests impacted by current git diff and return a 1-line pass/fail receipt.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "all_tests": {"type": "boolean", "default": False, "description": "Run all discovered tests instead of diff-impacted only"},
+                "root": {"type": "string", "default": ".", "description": "Workspace root directory"},
+            },
+        },
+    },
+    {
         "name": "tokwiz_stats",
         "description": "Return TokWiz token savings, Forecast-vs-Real MAPE, and cost telemetry summary.",
         "inputSchema": {
@@ -159,6 +172,17 @@ def _execute_tool(name: str, args: Dict[str, Any], default_root: Path) -> str:
         estimator = est.TokenEstimator(root_dir=ws_root)
         res = estimator.estimate(str(args.get("prompt") or ""))
         return estimator.render_forecast_banner(res)
+
+    if name == "tokwiz_test":
+        wops = _load_script("workspace_ops", "workspace-ops.py")
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = wops.run_impacted_tests(
+                ws_root,
+                all_tests=bool(args.get("all_tests", False)),
+            )
+        out_text = buf.getvalue().strip()
+        return out_text or (f"✓ Tests passed (exit {rc})" if rc == 0 else f"✗ Tests failed (exit {rc})")
 
     if name == "tokwiz_stats":
         tel = _load_script("telemetry", "telemetry.py")
