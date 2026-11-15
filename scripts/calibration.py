@@ -49,6 +49,17 @@ class ActualUsage:
     output_tokens: int
 
     @property
+    def uncached_tokens(self) -> int:
+        uncached_in = max(0, self.input_tokens - self.cached_input_tokens)
+        return uncached_in + self.reasoning_tokens + self.output_tokens
+
+    @property
+    def effective_tokens(self) -> int:
+        """Cache-weighted billing-equivalent tokens (cache reads weighted at 0.1x)."""
+        uncached_in = max(0, self.input_tokens - self.cached_input_tokens)
+        return uncached_in + int(round(self.cached_input_tokens * 0.1)) + self.reasoning_tokens + self.output_tokens
+
+    @property
     def total_tokens(self) -> int:
         return self.input_tokens + self.reasoning_tokens + self.output_tokens
 
@@ -72,14 +83,16 @@ def parse_usage_payload(payload: Dict[str, object]) -> ActualUsage:
         total_in = raw_in + cache_read + cache_create if "cache_read_input_tokens" in usage else raw_in
         out_tok = int(usage.get("output_tokens", 0))
         reason_tok = int(usage.get("reasoning_tokens", usage.get("thinking_tokens", 0)))
-        tool_tok = int(usage.get("tool_output_tokens", int(total_in * 0.35)))
+        cached_clamped = min(total_in, cache_read)
+        uncached_in = max(0, total_in - cached_clamped)
+        tool_tok = int(usage.get("tool_output_tokens", int(uncached_in * 0.35)))
         steps = int(payload.get("real_steps", usage.get("tool_steps", 3)))
         return ActualUsage(
             agent_host=agent_host,
             model_id=model_id,
             real_steps=steps,
             input_tokens=total_in,
-            cached_input_tokens=min(total_in, cache_read),
+            cached_input_tokens=cached_clamped,
             tool_output_tokens=tool_tok,
             reasoning_tokens=reason_tok,
             output_tokens=out_tok,
@@ -165,10 +178,12 @@ def attribute_variance_causes(
     f_reason = max(1, int(forecast.get("reasoning_tokens", 100)))
     f_total = max(1, int(forecast.get("total_tokens", 1000)))
 
+    effective_total = usage.effective_tokens
+
     if (
         usage.real_steps > f_steps + 2
         and usage.real_steps >= int(f_steps * 1.4)
-        and usage.total_tokens > int(f_total * 1.15)
+        and effective_total > int(f_total * 1.15)
     ):
         tags.append("EXTRA_TOOL_LOOPS")
 
@@ -176,10 +191,10 @@ def attribute_variance_causes(
     if usage.input_tokens > 500 and cache_ratio < 0.45:
         tags.append("CACHE_MISS_DRIFT")
 
-    if usage.reasoning_tokens > f_reason * 1.5 and (usage.reasoning_tokens - f_reason) > 200 and usage.total_tokens > int(f_total * 1.15):
+    if usage.reasoning_tokens > f_reason * 1.5 and (usage.reasoning_tokens - f_reason) > 200 and effective_total > int(f_total * 1.15):
         tags.append("REASONING_SPIKE")
 
-    if usage.tool_output_tokens > f_tool * 1.5 and (usage.tool_output_tokens - f_tool) > 300 and usage.total_tokens > int(f_total * 1.15):
+    if usage.tool_output_tokens > f_tool * 1.5 and (usage.tool_output_tokens - f_tool) > 300 and effective_total > int(f_total * 1.15):
         tags.append("UNBOUNDED_TOOL_OUTPUT")
 
     if not tags:

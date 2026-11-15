@@ -132,6 +132,24 @@ class TestCostReconciliationAndCalibration(unittest.TestCase):
         self.assertIn("REASONING_SPIKE", tags)
         self.assertIn("UNBOUNDED_TOOL_OUTPUT", tags)
 
+        # High cache-hit turn (e.g. 97% cache_read_input_tokens) must not falsely trigger UNBOUNDED_TOOL_OUTPUT
+        cached_usage = cal_mod.parse_usage_payload(
+            {
+                "agent_host": "claude",
+                "real_steps": 3,
+                "usage": {
+                    "input_tokens": 1500,
+                    "cache_read_input_tokens": 48500,
+                    "output_tokens": 200,
+                },
+            }
+        )
+        self.assertEqual(cached_usage.effective_tokens, 1500 + 4850 + 200)
+        self.assertEqual(
+            cal_mod.attribute_variance_causes({"total_tokens": 6000, "estimated_steps": 3, "tool_loop_tokens": 1200}, cached_usage),
+            ["ON_TARGET"],
+        )
+
     def test_pre_post_turn_reconciliation_and_telemetry_summary(self) -> None:
         # 1. Trigger PreInvocation hook to create .tokwiz/active-forecast.json
         pre_out = pre_hook_mod.handle_pre_prompt(

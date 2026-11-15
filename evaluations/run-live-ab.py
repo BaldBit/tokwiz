@@ -73,6 +73,7 @@ def build_agent_command(
     prompt: str,
     extra_args: Optional[List[str]] = None,
     persist_sessions: bool = False,
+    mcp_config_path: Optional[Path] = None,
 ) -> List[str]:
     """Build the headless CLI command for the requested coding agent."""
     extra = list(extra_args or [])
@@ -89,6 +90,8 @@ def build_agent_command(
             "project,local",
             "--strict-mcp-config",
         ]
+        if mcp_config_path is not None and mcp_config_path.exists():
+            cmd.extend(["--mcp-config", str(mcp_config_path)])
         if not persist_sessions:
             cmd.append("--no-session-persistence")
         return [*cmd, *extra]
@@ -263,6 +266,14 @@ def run_live_ab(
 
             runs: Dict[str, AgentRunResult] = {}
             for label, target_dir in (("baseline", baseline_dir), ("tokwiz", tokwiz_dir)):
+                mcp_cfg = target_dir / ".mcp.json"
+                ws_cmd = build_agent_command(
+                    agent,
+                    prompt,
+                    extra_args,
+                    persist_sessions=(workspace_dir is not None),
+                    mcp_config_path=mcp_cfg if mcp_cfg.exists() else None,
+                )
                 if dry_run:
                     runs[label] = AgentRunResult(
                         agent=agent,
@@ -280,7 +291,7 @@ def run_live_ab(
                     continue
 
                 t0 = time.perf_counter()
-                proc = exec_fn(cmd, target_dir, timeout_sec)
+                proc = exec_fn(ws_cmd, target_dir, timeout_sec)
                 elapsed = round((time.perf_counter() - t0) * 1000.0, 1)
                 inp, cached, out, total, cost = parse_agent_usage_json(proc.stdout or "", agent)
                 uncached = inp + out

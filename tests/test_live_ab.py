@@ -56,6 +56,16 @@ class TestLiveABRunner(unittest.TestCase):
         inp, cached, out, total, _ = live_ab.parse_agent_usage_json(gemini_out, "gemini")
         self.assertEqual((inp, cached, out, total), (800, 200, 200, 1200))
 
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            mcp_file = Path(td) / ".mcp.json"
+            mcp_file.write_text("{}", encoding="utf-8")
+            cmd_with_mcp = live_ab.build_agent_command("claude", "test", mcp_config_path=mcp_file)
+            self.assertIn("--mcp-config", cmd_with_mcp)
+            self.assertIn(str(mcp_file), cmd_with_mcp)
+            cmd_no_mcp = live_ab.build_agent_command("claude", "test")
+            self.assertNotIn("--mcp-config", cmd_no_mcp)
+
     def test_run_live_ab_with_mocked_runner_and_dry_run_cli(self) -> None:
         def fake_runner(cmd, cwd: Path, timeout_sec: int):
             is_tokwiz = cwd.name == "project-tokwiz"

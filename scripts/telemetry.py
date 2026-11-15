@@ -341,6 +341,13 @@ class TelemetryStore:
         tot_r_tok = sum(int(t["real_total_tokens"]) for t in turns)
         tot_u_tok = sum(int(t["unoptimized_baseline_tokens"]) for t in turns)
         tot_saved_tok = sum(int(t["net_tokens_saved"]) for t in turns)
+        tot_eff_tok = sum(
+            max(0, int(t["real_input_tokens"]) - int(t["real_cached_input_tokens"]))
+            + int(round(int(t["real_cached_input_tokens"]) * 0.1))
+            + int(t["real_reasoning_tokens"])
+            + int(t["real_output_tokens"])
+            for t in turns
+        )
 
         tot_f_cost = sum(float(t["forecast_cost_usd"]) for t in turns)
         tot_r_cost = sum(float(t["real_cost_usd"]) for t in turns)
@@ -355,7 +362,7 @@ class TelemetryStore:
         tot_in = sum(int(t["real_input_tokens"]) for t in turns)
         tot_cached = sum(int(t["real_cached_input_tokens"]) for t in turns)
         cache_ratio = (tot_cached / max(1, tot_in)) * 100.0
-        avg_red_pct = (tot_saved_tok / max(1, tot_r_tok + tot_saved_tok)) * 100.0
+        avg_red_pct = (tot_saved_tok / max(1, tot_eff_tok + tot_saved_tok)) * 100.0
 
         variance_counts: Dict[str, int] = {}
         level_dist: Dict[str, int] = {"1": 0, "2": 0, "3": 0}
@@ -391,6 +398,7 @@ class TelemetryStore:
             "guardrail_tokens_saved": guardrail_saved_tokens,
             "total_forecast_tokens": tot_f_tok,
             "total_real_tokens": tot_r_tok,
+            "total_effective_tokens": tot_eff_tok,
             "total_unoptimized_tokens": tot_u_tok,
             "net_tokens_saved": tot_saved_tok + guardrail_saved_tokens,
             "avg_reduction_pct": round(avg_red_pct, 1),
