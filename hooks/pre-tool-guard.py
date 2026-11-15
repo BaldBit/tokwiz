@@ -68,6 +68,13 @@ MAX_UNBOUNDED_LINES = 150
 MAX_STRUCTURED_UNBOUNDED_LINES = 150
 STRUCTURED_DATA_EXTENSIONS = {".json", ".yaml", ".yml", ".toml", ".sql"}
 GREP_TOOL_NAMES = {"grep", "grep_search", "ripgrep", "search_grep"}
+GLOB_TOOL_NAMES = {"glob", "find_by_name", "list_dir"}
+BROAD_GLOB_PATTERNS = {
+    "", "*", "**", "**/*",
+    "*.py", "**/*.py", "*.ts", "**/*.ts", "*.tsx", "**/*.tsx",
+    "*.js", "**/*.js", "*.jsx", "**/*.jsx", "*.go", "**/*.go", "*.rs", "**/*.rs",
+    "src/**", "src/**/*",
+}
 
 
 def _load_project_graph():
@@ -117,6 +124,34 @@ def _try_graph_intercept_grep(workspace_root: Path, pattern: str) -> Optional[st
         )
     except Exception:
         return None
+
+
+def _try_graph_intercept_glob(workspace_root: Path, pattern: str) -> Optional[str]:
+    if pattern.strip() not in BROAD_GLOB_PATTERNS:
+        return None
+    db_path = workspace_root / ".tokwiz" / "graph.db"
+    if not db_path.exists():
+        return None
+    try:
+        import sqlite3
+        conn = sqlite3.connect(str(db_path), timeout=0.5)
+        rows = conn.execute(
+            "SELECT file_path, COUNT(*) FROM nodes "
+            "GROUP BY file_path ORDER BY COUNT(*) DESC LIMIT 25"
+        ).fetchall()
+        conn.close()
+    except Exception:
+        return None
+    if not rows:
+        return None
+    _record_guardrail_event(workspace_root, "intercepted_broad_glob", pattern or "*", 1200)
+    lines = [f"  - `{fp}` ({cnt} symbols)" for fp, cnt in rows]
+    return (
+        f"[TokWiz Guardrail] Broad Glob (`{pattern or '*'}`) intercepted via `.tokwiz/graph.db` "
+        f"(saved ~1,200 tokens). Top indexed files:\n"
+        + "\n".join(lines)
+        + "\n\nQuery `tokwiz_graph_query` / `tokwiz_slice` or pass a narrow Glob pattern."
+    )
 
 
 def _load_skeletonizer():
@@ -327,50 +362,13 @@ def _check_and_update_read_ledger(
     return None
 
 
-def handle_pre_tool_use(
-    payload: Dict[str, object],
-    default_root: Optional[Path] = None,
-) -> Dict[str, object]:
-    cwd_str = str(payload.get("cwd") or payload.get("workspace_root") or (default_root or os.getcwd()))
-    workspace_root = Path(cwd_str).resolve()
-    if not workspace_root.exists():
-        workspace_root = (default_root or Path.cwd()).resolve()
-
-    tool_name, tool_input = _extract_tool_info(payload)
-    tool_low = tool_name.lower()
-
-    # Check shell commands attempting to cat/head/grep lockfiles directly
-    if tool_low in ("bash", "run_command", "shell", "exec"):
-        cmd_str = str(tool_input.get("command") or tool_input.get("CommandLine") or "")
-        for lf in LOCKFILES:
-            if re.search(rf"\b(?:cat|less|more)\s+[^\n;|&]*\b{re.escape(lf)}\b", cmd_str, re.IGNORECASE):
-                _record_guardrail_event(workspace_root, "blocked_lockfile_cmd", lf, 12000)
-                return _build_deny_response(
-                    f"[TokWiz Guardrail] Blocked reading lockfile `{lf}` via shell. "
-                    "Inspect `package.json`, `pyproject.toml`, or `Cargo.toml` instead."
-                )
-        for seg in re.split(r"\s*(?:&&|\|\||;|\n)\s*", cmd_str):
-            grep_m = re.match(r"^\s*(?:rg|grep)\s+(?:-[A-Za-z]+\s+)*['\"]?([A-Za-z_][A-Za-z0-9_.:-]{1,64})['\"]?(?:\s|$)", seg)
-            if grep_m:
-                hit = _try_graph_intercept_grep(workspace_root, grep_m.group(1))
-                if hit:
-                    return _build_deny_response(hit)
-        return _build_allow_response()
-
-    if tool_low in GREP_TOOL_NAMES:
-        pat = str(tool_input.get("pattern") or tool_input.get("Query") or tool_input.get("query") or "")
-        hit = _try_graph_intercept_grep(workspace_root, pat)
-        if hit:
-            return _build_deny_response(hit)
-        return _build_allow_response()
-
-    if tool_low not in READ_TOOL_NAMES and "read" not in tool_low:
-        return _build_allow_response()
-
-    raw_path = _extract_file_path(tool_input)
-    if not raw_path:
-        return _build_allow_response()
-
+def _check_file_read_guardrail(
+    workspace_root: Path,
+    raw_path: str,
+    tool_input: Dict[str, object],
+    session_id: str,
+    allow_hint_cmd: Optional[str] = None,
+) -> Optional[Dict[str, object]]:
     blocked, waste_reason = is_high_waste_path(raw_path)
     if blocked:
         _record_guardrail_event(workspace_root, "blocked_high_waste_file", raw_path, 8000)
@@ -384,12 +382,12 @@ def handle_pre_tool_use(
         resolved_path = (workspace_root / resolved_path).resolve()
 
     if not resolved_path.exists() or not resolved_path.is_file():
-        return _build_allow_response()
+        return None
 
     try:
         content = resolved_path.read_text(encoding="utf-8", errors="replace")
     except Exception:
-        return _build_allow_response()
+        return None
 
     lines = content.splitlines()
     has_range = _has_line_range(tool_input)
@@ -405,16 +403,16 @@ def handle_pre_tool_use(
         event_kind = "skeletonized_structured_read" if is_structured else "skeletonized_unbounded_read"
         _record_guardrail_event(workspace_root, event_kind, raw_path, saved)
 
+        ranged_hint = allow_hint_cmd or "Re-call read_file with targeted `StartLine` and `EndLine` ranges"
         reason = (
             f"[TokWiz Guardrail] `{raw_path}` has {len(lines)} lines (>{line_limit}-line unbounded read limit). "
             f"Here is its compact AST Skeleton (saved ~{saved} tokens). "
-            "Re-call read_file with targeted `StartLine` and `EndLine` ranges:\n\n"
+            f"{ranged_hint}:\n\n"
             f"{skeleton_str}"
         )
         return _build_deny_response(reason)
 
     req_start, req_end = _extract_line_range(tool_input, len(lines))
-    session_id = str(payload.get("session_id") or "default")
     cache_hit_msg = _check_and_update_read_ledger(
         workspace_root=workspace_root,
         session_id=session_id,
@@ -427,6 +425,94 @@ def handle_pre_tool_use(
     )
     if cache_hit_msg:
         return _build_deny_response(cache_hit_msg)
+    return None
+
+
+def handle_pre_tool_use(
+    payload: Dict[str, object],
+    default_root: Optional[Path] = None,
+) -> Dict[str, object]:
+    cwd_str = str(payload.get("cwd") or payload.get("workspace_root") or (default_root or os.getcwd()))
+    workspace_root = Path(cwd_str).resolve()
+    if not workspace_root.exists():
+        workspace_root = (default_root or Path.cwd()).resolve()
+
+    tool_name, tool_input = _extract_tool_info(payload)
+    tool_low = tool_name.lower()
+    session_id = str(payload.get("session_id") or "default")
+
+    # Check shell commands attempting to cat/less/more lockfiles, grep indexed symbols,
+    # dump huge files via cat/nl, or run unfiltered tests/diffs.
+    if tool_low in ("bash", "run_command", "shell", "exec"):
+        cmd_str = str(tool_input.get("command") or tool_input.get("CommandLine") or "")
+        for lf in LOCKFILES:
+            if re.search(rf"\b(?:cat|less|more)\s+[^\n;|&]*\b{re.escape(lf)}\b", cmd_str, re.IGNORECASE):
+                _record_guardrail_event(workspace_root, "blocked_lockfile_cmd", lf, 12000)
+                return _build_deny_response(
+                    f"[TokWiz Guardrail] Blocked reading lockfile `{lf}` via shell. "
+                    "Inspect `package.json`, `pyproject.toml`, or `Cargo.toml` instead."
+                )
+        has_filter_pipe = bool(
+            re.search(r"(?:tokwiz\s+filter|output-filter\.py|\|\s*(?:head|tail|grep|rg|awk|sed|wc)\b)", cmd_str)
+        )
+        for seg in re.split(r"\s*(?:&&|\|\||;|\n)\s*", cmd_str):
+            grep_m = re.match(r"^\s*(?:rg|grep)\s+(?:-[A-Za-z]+\s+)*['\"]?([A-Za-z_][A-Za-z0-9_.:-]{1,64})['\"]?(?:\s|$)", seg)
+            if grep_m:
+                hit = _try_graph_intercept_grep(workspace_root, grep_m.group(1))
+                if hit:
+                    return _build_deny_response(hit)
+            if "|" not in seg and ">" not in seg:
+                cat_m = re.match(r"^\s*(?:cat|nl(?:\s+-[A-Za-z]+)*)\s+['\"]?([^\s'\";|&]+)['\"]?\s*$", seg)
+                if cat_m:
+                    res = _check_file_read_guardrail(
+                        workspace_root,
+                        cat_m.group(1),
+                        {},
+                        session_id,
+                        allow_hint_cmd=f"Use `sed -n 'start,endp' {cat_m.group(1)}` or `Read` with `offset`/`limit`",
+                    )
+                    if res:
+                        return res
+            if not has_filter_pipe:
+                seg_clean = seg.strip()
+                if re.match(r"^(?:pytest|py\.test|python3?\s+-m\s+(?:pytest|unittest)|npm\s+test|npx\s+(?:vitest|jest)|cargo\s+test|go\s+test)\b", seg_clean) and not re.search(r"\s(?:-q|--quiet)\b", seg_clean):
+                    _record_guardrail_event(workspace_root, "redirected_unfiltered_test", seg_clean[:80], 1800)
+                    return _build_deny_response(
+                        "[TokWiz Guardrail] Unfiltered test output bloats context. "
+                        f"Use `mcp__tokwiz__tokwiz_test` or run `tokwiz filter -- {seg_clean}` instead."
+                    )
+                if re.match(r"^git\s+diff\b", seg_clean) and not re.search(r"\s(?:--stat|--name-only|--name-status|--shortstat)\b", seg_clean):
+                    _record_guardrail_event(workspace_root, "redirected_unfiltered_diff", seg_clean[:80], 1500)
+                    return _build_deny_response(
+                        "[TokWiz Guardrail] Unfiltered `git diff` can dump lockfiles and large hunks. "
+                        f"Run `tokwiz filter -- {seg_clean}` or `git diff --stat` first."
+                    )
+        return _build_allow_response()
+
+    if tool_low in GREP_TOOL_NAMES:
+        pat = str(tool_input.get("pattern") or tool_input.get("Query") or tool_input.get("query") or "")
+        hit = _try_graph_intercept_grep(workspace_root, pat)
+        if hit:
+            return _build_deny_response(hit)
+        return _build_allow_response()
+
+    if tool_low in GLOB_TOOL_NAMES:
+        pat = str(tool_input.get("pattern") or tool_input.get("Pattern") or "")
+        hit = _try_graph_intercept_glob(workspace_root, pat)
+        if hit:
+            return _build_deny_response(hit)
+        return _build_allow_response()
+
+    if tool_low not in READ_TOOL_NAMES and "read" not in tool_low:
+        return _build_allow_response()
+
+    raw_path = _extract_file_path(tool_input)
+    if not raw_path:
+        return _build_allow_response()
+
+    res = _check_file_read_guardrail(workspace_root, raw_path, tool_input, session_id)
+    if res:
+        return res
 
     return _build_allow_response()
 

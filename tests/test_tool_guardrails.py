@@ -226,6 +226,63 @@ class TestToolGuardrailsAndOutputFilter(unittest.TestCase):
         self.assertEqual(res_chained["hookSpecificOutput"]["permissionDecision"], "deny")
         self.assertIn("Intercepted repo-wide grep", res_chained["hookSpecificOutput"]["permissionDecisionReason"])
 
+    def test_bash_cat_glob_and_unfiltered_cmd_guardrails(self) -> None:
+        # Build graph for broad Glob test
+        large_py = self.root / "src" / "big_mod.py"
+        large_py.parent.mkdir(parents=True, exist_ok=True)
+        lines = [f"def fn_{i}():\n    return {i}\n" for i in range(120)]
+        large_py.write_text("\n".join(lines), encoding="utf-8")
+        pg_mod = _load_module("project_graph_guard_test2", SCRIPTS_DIR / "project-graph.py")
+        pg_mod.ProjectGraph(root_dir=self.root).build()
+
+        # 1. Bash `cat` on >150-line file must be skeletonized
+        res_cat = guard_mod.handle_pre_tool_use(
+            {"tool_name": "Bash", "tool_input": {"command": "cat src/big_mod.py"}, "cwd": str(self.root)},
+            default_root=self.root,
+        )
+        self.assertEqual(res_cat["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertIn("compact AST Skeleton", res_cat["hookSpecificOutput"]["permissionDecisionReason"])
+
+        # 2. Broad Glob (`**/*`) must be intercepted via graph.db; narrow Glob allowed
+        res_glob = guard_mod.handle_pre_tool_use(
+            {"tool_name": "Glob", "tool_input": {"pattern": "**/*"}, "cwd": str(self.root)},
+            default_root=self.root,
+        )
+        self.assertEqual(res_glob["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertIn("Broad Glob", res_glob["hookSpecificOutput"]["permissionDecisionReason"])
+
+        res_narrow = guard_mod.handle_pre_tool_use(
+            {"tool_name": "Glob", "tool_input": {"pattern": "src/big_*.py"}, "cwd": str(self.root)},
+            default_root=self.root,
+        )
+        self.assertEqual(res_narrow["hookSpecificOutput"]["permissionDecision"], "allow")
+
+        # 3. Unfiltered pytest & git diff must be steered; filtered/stat allowed
+        res_pytest = guard_mod.handle_pre_tool_use(
+            {"tool_name": "Bash", "tool_input": {"command": "pytest -v"}, "cwd": str(self.root)},
+            default_root=self.root,
+        )
+        self.assertEqual(res_pytest["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertIn("tokwiz_test", res_pytest["hookSpecificOutput"]["permissionDecisionReason"])
+
+        res_filtered = guard_mod.handle_pre_tool_use(
+            {"tool_name": "Bash", "tool_input": {"command": "tokwiz filter -- pytest -v"}, "cwd": str(self.root)},
+            default_root=self.root,
+        )
+        self.assertEqual(res_filtered["hookSpecificOutput"]["permissionDecision"], "allow")
+
+        res_diff = guard_mod.handle_pre_tool_use(
+            {"tool_name": "Bash", "tool_input": {"command": "git diff"}, "cwd": str(self.root)},
+            default_root=self.root,
+        )
+        self.assertEqual(res_diff["hookSpecificOutput"]["permissionDecision"], "deny")
+
+        res_diff_stat = guard_mod.handle_pre_tool_use(
+            {"tool_name": "Bash", "tool_input": {"command": "git diff --stat"}, "cwd": str(self.root)},
+            default_root=self.root,
+        )
+        self.assertEqual(res_diff_stat["hookSpecificOutput"]["permissionDecision"], "allow")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -60,11 +60,15 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "query_text": {"type": "string", "description": "Symbol name or keywords"},
+                "query_text": {"type": "string", "description": "Symbol name or keywords (comma-separated for batch)"},
+                "symbols": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional list of symbol names to slice together in one call",
+                },
                 "max_tokens": {"type": "integer", "default": 600, "description": "Token budget (default 600)"},
                 "root": {"type": "string", "default": ".", "description": "Workspace root directory"},
             },
-            "required": ["query_text"],
         },
     },
     {
@@ -162,11 +166,19 @@ def _execute_tool(name: str, args: Dict[str, Any], default_root: Path) -> str:
     if name == "tokwiz_slice":
         pg = _load_script("project_graph", "project-graph.py")
         graph = pg.ProjectGraph(root_dir=ws_root)
-        res = graph.slice_code(
-            str(args.get("query_text") or ""),
-            max_tokens=int(args.get("max_tokens") or 600),
-        )
-        return res.formatted_slice
+        max_tok = int(args.get("max_tokens") or 600)
+        raw_syms = args.get("symbols")
+        if isinstance(raw_syms, list) and raw_syms:
+            sym_list = [str(s).strip() for s in raw_syms if str(s).strip()]
+        else:
+            q = str(args.get("query_text") or "")
+            sym_list = [s.strip() for s in q.split(",") if s.strip()] if "," in q else ([q] if q.strip() else [])
+        if len(sym_list) <= 1:
+            res = graph.slice_code(sym_list[0] if sym_list else "", max_tokens=max_tok)
+            return res.formatted_slice
+        per_budget = max(200, max_tok // len(sym_list))
+        chunks = [graph.slice_code(sym, max_tokens=per_budget).formatted_slice for sym in sym_list]
+        return "\n\n---\n\n".join(chunks)
 
     if name == "tokwiz_skeleton":
         skel = _load_script("code_skeletonizer", "code-skeletonizer.py")

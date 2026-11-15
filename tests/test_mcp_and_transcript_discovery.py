@@ -96,6 +96,14 @@ class TestMCPServerAndTranscriptDiscovery(unittest.TestCase):
         self.assertIn("TokWiz Trace", tr["result"]["content"][0]["text"])
         self.assertIn("validate_token", tr["result"]["content"][0]["text"])
 
+        batch = mcp_mod.handle_jsonrpc_message(
+            {"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": "tokwiz_slice", "arguments": {"symbols": ["require_auth", "validate_token"], "max_tokens": 600}}},
+            self.ws,
+        )
+        self.assertFalse(batch["result"]["isError"])
+        self.assertIn("require_auth", batch["result"]["content"][0]["text"])
+        self.assertIn("validate_token", batch["result"]["content"][0]["text"])
+
         # Verify `tokwiz init` registers MCP configs non-destructively
         (self.ws / ".mcp.json").write_text(json.dumps({"mcpServers": {"custom": {"command": "echo"}}}), encoding="utf-8")
         subprocess.run(
