@@ -414,6 +414,133 @@
       border-radius: 4px;
       border: 1px solid var(--border);
     }
+    .info-tip {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 15px;
+      height: 15px;
+      margin-left: 4px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: rgba(56, 189, 248, 0.1);
+      color: var(--accent);
+      font-size: 0.65rem;
+      font-weight: 700;
+      font-style: normal;
+      line-height: 1;
+      cursor: help;
+      vertical-align: middle;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+    .info-tip:hover::after,
+    .info-tip:focus-visible::after {
+      content: attr(data-tip);
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      width: 240px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: #090f1d;
+      border: 1px solid var(--accent);
+      color: var(--text);
+      font-size: 0.74rem;
+      font-weight: 400;
+      line-height: 1.4;
+      white-space: normal;
+      text-align: left;
+      box-shadow: 0 10px 26px rgba(0, 0, 0, 0.65);
+      z-index: 80;
+      pointer-events: none;
+    }
+    .help-section {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-top: 22px;
+    }
+    .help-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .help-header h2 {
+      font-size: 1.05rem;
+      margin: 0;
+    }
+    .help-sub {
+      color: var(--muted);
+      font-size: 0.82rem;
+      margin: 4px 0 0;
+    }
+    .help-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+    .help-card {
+      background: #0d1424;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+    .help-card h3 {
+      font-size: 0.88rem;
+      color: var(--accent);
+      margin: 0 0 8px;
+    }
+    .help-card p,
+    .help-card li {
+      font-size: 0.8rem;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .help-card strong {
+      color: var(--text);
+    }
+    .help-card ul {
+      margin: 0;
+      padding-left: 16px;
+      display: grid;
+      gap: 6px;
+    }
+    .glossary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 10px;
+    }
+    .glossary-item {
+      background: #0d1424;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 0.79rem;
+      line-height: 1.45;
+      color: var(--muted);
+    }
+    .glossary-item strong {
+      display: block;
+      color: var(--text);
+      margin-bottom: 3px;
+      font-size: 0.82rem;
+    }
+    .help-card code,
+    .glossary-item code {
+      color: var(--emerald);
+      background: #060a12;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+    }
   </style>
 </head>
 <body>
@@ -428,32 +555,33 @@
     <div class="controls">
       <button id="liveBtn" type="button" class="active">Live Workspace Data</button>
       <button id="demoBtn" type="button">Preview Sample Session</button>
+      <button id="helpBtn" type="button" onclick="document.getElementById('helpSection').scrollIntoView({ behavior: 'smooth' })">? Help &amp; Glossary</button>
     </div>
   </header>
 
   <section class="kpi-grid" aria-label="Key Performance Indicators">
     <div class="kpi-card">
-      <div class="kpi-label">Net Tokens Saved</div>
+      <div class="kpi-label">Net Tokens Saved <span class="info-tip" tabindex="0" data-tip="Strict, receipt-backed tokens saved across all turns (after deducting TokWiz's own graph/skill overhead).">ⓘ</span></div>
       <div class="kpi-value" id="kpiTokensSaved">0</div>
       <div class="kpi-sub" id="kpiTokensSub">0 reconciled turns · 0 guardrail intercepts</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">Net $ Saved</div>
+      <div class="kpi-label">Net $ Saved <span class="info-tip" tabindex="0" data-tip="Estimated USD saved based on your model's input, cache-read, and output token pricing.">ⓘ</span></div>
       <div class="kpi-value" id="kpiCostSaved" style="color: var(--emerald);">$0.0000</div>
       <div class="kpi-sub" id="kpiSpentSub">Real Spent: $0.0000 · Forecast: $0.0000</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">Forecast vs. Real (ΔC & MAPE)</div>
+      <div class="kpi-label">Forecast vs. Real (ΔC & MAPE) <span class="info-tip" tabindex="0" data-tip="ΔC is Real Cost minus Forecast Cost. MAPE is Mean Absolute Percentage Error (lower = more accurate; target <= 20%).">ⓘ</span></div>
       <div class="kpi-value" id="kpiMape">—</div>
       <div class="kpi-sub" id="kpiDeltaSub">Run a prompt to measure ΔC & MAPE %</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">Avg Token Reduction %</div>
+      <div class="kpi-label">Avg Token Reduction % <span class="info-tip" tabindex="0" data-tip="Percentage of unoptimized baseline tokens avoided by using graph slices, skeletons, ranged reads, and output filtering.">ⓘ</span></div>
       <div class="kpi-value" id="kpiReduction" style="color: var(--accent);">0.0%</div>
       <div class="kpi-sub" id="kpiTurnsSub">0 turns recorded in telemetry.db</div>
     </div>
     <div class="kpi-card">
-      <div class="kpi-label">Project Graph Index</div>
+      <div class="kpi-label">Project Graph Index <span class="info-tip" tabindex="0" data-tip="Local SQLite AST map of your codebase's files, classes, functions, and call edges. Lets AI jump straight to exact lines.">ⓘ</span></div>
       <div class="kpi-value" id="kpiGraphNodes" style="color: var(--violet);">0 nodes</div>
       <div class="kpi-sub" id="kpiGraphSub">0 files · 0 edges (Live SQLite index)</div>
     </div>
@@ -571,19 +699,19 @@
   </section>
 
   <section class="table-card" id="abProofSection" aria-label="Head-to-Head A/B Benchmark Proof" style="display: none; margin-bottom: 22px;">
-    <h2>🔬 Head-to-Head A/B Transcript Verification (Baseline vs. TokWiz)</h2>
+    <h2>🔬 Head-to-Head A/B Transcript Verification (Baseline vs. TokWiz) <span class="info-tip" tabindex="0" data-tip="Compares the exact same prompts run in a normal repo (Baseline) vs. a TokWiz-enabled repo, using real IDE transcript logs.">ⓘ</span></h2>
     <div class="ab-proof-meta" id="abProofMeta"></div>
     <table>
       <thead>
         <tr>
           <th>#</th>
           <th>Prompt</th>
-          <th>Baseline Steps</th>
-          <th>TokWiz Steps</th>
-          <th>Baseline Real Tok</th>
-          <th>TokWiz Real Tok</th>
-          <th>A/B Net Saved Tok</th>
-          <th>Reduction %</th>
+          <th>Baseline Steps <span class="info-tip" tabindex="0" data-tip="Number of tool/model steps taken without TokWiz (e.g., full-file reads and grep loops).">ⓘ</span></th>
+          <th>TokWiz Steps <span class="info-tip" tabindex="0" data-tip="Number of steps taken with TokWiz (e.g., graph queries and targeted line-range reads).">ⓘ</span></th>
+          <th>Baseline Real Tok <span class="info-tip" tabindex="0" data-tip="Actual tokens billed in the unoptimized Baseline workspace.">ⓘ</span></th>
+          <th>TokWiz Real Tok <span class="info-tip" tabindex="0" data-tip="Actual tokens billed in the TokWiz-optimized workspace (including TokWiz's own overhead).">ⓘ</span></th>
+          <th>A/B Net Saved Tok <span class="info-tip" tabindex="0" data-tip="Baseline Real Tokens minus TokWiz Real Tokens. Positive means TokWiz used fewer tokens.">ⓘ</span></th>
+          <th>Reduction % <span class="info-tip" tabindex="0" data-tip="Percentage of Baseline tokens saved by TokWiz on this prompt.">ⓘ</span></th>
           <th>Baseline $</th>
           <th>TokWiz $</th>
         </tr>
@@ -593,26 +721,114 @@
   </section>
 
   <section class="table-card" aria-label="Live Prompt Audit Log">
-    <h2>Prompt Forecast & Cost Reconciliation Audit Log</h2>
+    <h2>Prompt Forecast & Cost Reconciliation Audit Log <span class="info-tip" tabindex="0" data-tip="Click any row to inspect the exact tool-call receipts proving where tokens were saved.">ⓘ</span></h2>
     <table>
       <thead>
         <tr>
-          <th>Forecast ID</th>
+          <th>Forecast ID <span class="info-tip" tabindex="0" data-tip="Unique ID linking a pre-prompt forecast to its actual post-turn billed usage.">ⓘ</span></th>
           <th>Prompt</th>
-          <th>Profile</th>
-          <th>Source</th>
-          <th>Forecast Tok</th>
-          <th>Real Tok</th>
-          <th>Saved Tok (Receipts)</th>
+          <th>Profile <span class="info-tip" tabindex="0" data-tip="Prompt complexity tier (A=Simple Q&A, B=Single-file edit, C=Multi-file refactor, D=Debug/test triage, E=Repo-wide).">ⓘ</span></th>
+          <th>Source <span class="info-tip" tabindex="0" data-tip="Where the turn was captured from: TRANSCRIPT (auto-synced IDE log), HOOK (IDE hook), or CLI.">ⓘ</span></th>
+          <th>Forecast Tok <span class="info-tip" tabindex="0" data-tip="Tokens predicted by TokWiz before the AI started working.">ⓘ</span></th>
+          <th>Real Tok <span class="info-tip" tabindex="0" data-tip="Actual tokens billed by the AI provider after the turn finished.">ⓘ</span></th>
+          <th>Saved Tok (Receipts) <span class="info-tip" tabindex="0" data-tip="Tokens proven saved via itemized tool receipts (skeletons, ranged reads, graph slices, filters, cache hits). 0 if full file was read.">ⓘ</span></th>
           <th>Forecast $</th>
           <th>Real $</th>
-          <th>ΔC ($)</th>
-          <th>APE %</th>
-          <th>Status / Variance</th>
+          <th>ΔC ($) <span class="info-tip" tabindex="0" data-tip="Cost Delta = Real $ minus Forecast $. Negative (green) means cheaper than predicted.">ⓘ</span></th>
+          <th>APE % <span class="info-tip" tabindex="0" data-tip="Absolute Percentage Error: |Real $ - Forecast $| / Real $ × 100%. Lower % means tighter prediction accuracy.">ⓘ</span></th>
+          <th>Status / Variance <span class="info-tip" tabindex="0" data-tip="ON_TARGET means within budget; tags like EXTRA_TOOL_LOOPS or CACHE_MISS_DRIFT explain why cost drifted.">ⓘ</span></th>
         </tr>
       </thead>
       <tbody id="auditTableBody"></tbody>
     </table>
+  </section>
+
+  <!-- Help, How TokWiz Works & Terminology Glossary -->
+  <section class="help-section" id="helpSection" aria-label="Help and Terminology Guide">
+    <div class="help-header">
+      <div>
+        <h2>📚 How TokWiz Works &amp; Terminology Guide</h2>
+        <p class="help-sub">Everything TokWiz does behind the scenes to cut AI token bills without hurting code quality—explained in plain English.</p>
+      </div>
+      <div class="controls">
+        <button type="button" onclick="window.scrollTo({ top: 0, behavior: 'smooth' })">↑ Back to Top</button>
+      </div>
+    </div>
+
+    <div class="help-grid">
+      <div class="help-card">
+        <h3>1. How TokWiz Saves Tokens (Plain English)</h3>
+        <ul>
+          <li><strong>Map First, Don't Wander (<code>tokwiz graph</code> &amp; <code>slice</code>):</strong> Instead of the AI running 6–10 <code>grep</code>/<code>find</code> searches, TokWiz keeps a local map of every function and its callers (<code>.tokwiz/graph.db</code>) and hands the AI only the exact lines it needs.</li>
+          <li><strong>Table of Contents Before Full Files (<code>tokwiz skeleton</code>):</strong> When an AI tries to read a large code file (&gt;300 lines) or config/data file (&gt;150 lines of JSON/YAML/TOML/SQL), TokWiz blocks the dump and returns a tiny outline with line numbers so the AI only reads the relevant 20–40 lines.</li>
+          <li><strong>No Duplicate Reads (SHA-1 Session Cache):</strong> If the AI tries to re-read an unchanged file range already in its context, TokWiz blocks the repeat with a 15-token <code>[TokWiz Cache Hit]</code> reminder.</li>
+          <li><strong>Skip Junk &amp; Noise (<code>pre-tool-guard</code>, <code>output-filter</code>, <code>tokwiz test</code>):</strong> Blocks lockfiles (<code>package-lock.json</code>, <code>Cargo.lock</code>) and <code>node_modules/</code>; strips test pass spam; and runs only tests impacted by your <code>git diff</code>.</li>
+          <li><strong>Clean Memory Resets (<code>tokwiz checkpoint</code>):</strong> Writes a &lt;200-token summary of changed files, symbol line numbers, and test status before <code>/compact</code> so a new chat doesn't re-explore from scratch.</li>
+        </ul>
+      </div>
+
+      <div class="help-card">
+        <h3>2. Why We Never Fake Savings (Receipt-Backed Proof)</h3>
+        <p>Many tools guess "estimated savings." TokWiz refuses to count savings unless there is hard proof:</p>
+        <ul>
+          <li><strong>Strict Receipts:</strong> Every saved token in <em>Saved Tok (Receipts)</em> is tied to an actual tool event (<code>GRAPH_QUERY</code>, <code>SKELETON_AND_RANGE</code>, <code>RANGED_READ</code>, <code>OUTPUT_FILTER</code>, or <code>SESSION_READ_CACHE_HIT</code>).</li>
+          <li><strong>Full-Read Penalty:</strong> If the AI ignores a skeleton and reads the entire file anyway, TokWiz credits <strong>0 tokens</strong> for that file.</li>
+          <li><strong>Self-Calibrating Forecasts:</strong> After every turn, TokWiz compares <em>Forecast $</em> vs. <em>Real $</em> and auto-adjusts its weights (EMA) so future cost predictions stay accurate.</li>
+        </ul>
+      </div>
+
+      <div class="help-card">
+        <h3>3. Everyday CLI Commands</h3>
+        <ul>
+          <li><code>tokwiz init --agent all</code> — Wire TokWiz into Claude Code, Codex, Gemini/Antigravity &amp; Cursor.</li>
+          <li><code>tokwiz slice &lt;symbol&gt;</code> — Get a symbol's exact code + caller snippets in one shot.</li>
+          <li><code>tokwiz skeleton &lt;file&gt;</code> — View a compact AST or JSON/YAML/TOML/SQL outline.</li>
+          <li><code>tokwiz test</code> — Run only tests impacted by your current <code>git diff</code>.</li>
+          <li><code>tokwiz checkpoint</code> — Save a &lt;200-token working snapshot to <code>.tokwiz/checkpoint.md</code>.</li>
+          <li><code>tokwiz live-ab --agent claude</code> — Run an automated Baseline vs. TokWiz benchmark.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 style="font-size: 0.9rem; margin: 0 0 10px; color: var(--text);">Dashboard &amp; Table Terminology (Glossary)</h3>
+    <div class="glossary-grid">
+      <div class="glossary-item">
+        <strong>Tokens</strong>
+        Small pieces of text (~4 characters each) that AI providers count and bill for—both <em>Input</em> (what the AI reads) and <em>Output</em> (what it writes).
+      </div>
+      <div class="glossary-item">
+        <strong>KV-Cache / Cache-Read Tokens</strong>
+        Previously sent context (like system prompts) that the AI provider remembers at a <strong>75%–90% discount</strong> instead of charging full input price again.
+      </div>
+      <div class="glossary-item">
+        <strong>Profile (A – E)</strong>
+        Task complexity rating assigned before the prompt runs: <strong>A</strong> (Q&amp;A, 0–1 steps), <strong>B</strong> (single-file edit), <strong>C</strong> (multi-file refactor), <strong>D</strong> (debugging/tests), <strong>E</strong> (repo-wide exploration).
+      </div>
+      <div class="glossary-item">
+        <strong>Source (TRANSCRIPT / HOOK / CLI)</strong>
+        Where the row came from. <code>TRANSCRIPT</code> means auto-synced directly from your IDE's chat log; <code>HOOK</code> means captured by an agent lifecycle hook.
+      </div>
+      <div class="glossary-item">
+        <strong>Forecast Tok / $ vs. Real Tok / $</strong>
+        <strong>Forecast</strong> is TokWiz's prediction <em>before</em> you press Enter. <strong>Real</strong> is what the AI model actually used and billed <em>after</em> the turn finished.
+      </div>
+      <div class="glossary-item">
+        <strong>ΔC ($) (Cost Delta)</strong>
+        <code>Real Cost − Forecast Cost</code>. A negative value (e.g. <code>-$0.002</code>) means the turn cost <em>less</em> than predicted; positive means it cost more.
+      </div>
+      <div class="glossary-item">
+        <strong>APE % &amp; MAPE</strong>
+        <em>Absolute Percentage Error</em> (<code>|Real − Forecast| / Real × 100%</code>) for one turn, and <em>Mean</em> APE across all turns. Lower % = more accurate predictions (target ≤ 20%).
+      </div>
+      <div class="glossary-item">
+        <strong>Variance Tags (Status)</strong>
+        Explains why Real cost differed from Forecast: <code>ON_TARGET</code> (as expected), <code>EXTRA_TOOL_LOOPS</code> (more steps than usual), <code>CACHE_MISS_DRIFT</code> (cache not reused), <code>REASONING_SPIKE</code>, or <code>UNBOUNDED_TOOL_OUTPUT</code>.
+      </div>
+      <div class="glossary-item">
+        <strong>Baseline vs. TokWiz (A/B Proof)</strong>
+        Side-by-side test running the exact same prompt in a plain repo (<em>Baseline</em>) vs. a TokWiz repo, verifying both pass 100% of tests while measuring real token &amp; dollar savings.
+      </div>
+    </div>
   </section>
 
   <script>
