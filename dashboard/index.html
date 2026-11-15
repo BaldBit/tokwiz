@@ -519,7 +519,7 @@
       bottom: calc(100% + 8px);
       left: 50%;
       transform: translateX(-50%);
-      width: 245px;
+      width: 285px;
       padding: 8px 10px;
       border-radius: 8px;
       background: var(--card);
@@ -533,6 +533,13 @@
       box-shadow: var(--shadow-lg);
       z-index: 80;
       pointer-events: none;
+    }
+    .chart-header .info-tip:hover::after,
+    .chart-header .info-tip:focus-visible::after,
+    .graph-header .info-tip:hover::after,
+    .graph-header .info-tip:focus-visible::after {
+      left: 0;
+      transform: none;
     }
 
     /* Documentation-Style Help Modal with Left Navigation */
@@ -803,7 +810,7 @@
   <section class="graph-section" aria-label="Interactive Project Graph Visualizer">
     <div class="graph-header">
       <div>
-        <h2>🌐 Interactive Project Graph (Drag to Rotate · Scroll to Zoom · Click Node to Inspect)</h2>
+        <h2>🌐 Interactive Project Graph (Drag to Rotate · Scroll to Zoom · Click Node to Inspect) <span class="info-tip" tabindex="0" data-tip="How to read: Each dot is a file, class, or function; lines show CALLS/IMPORTS/DEFINES. Good: Clean clusters with clear hub nodes so TokWiz can fetch 1-hop slices instead of full files. Bad: Disconnected gray dots (check .tokwiz/graph.db indexing).">ⓘ</span></h2>
       </div>
       <div class="controls">
         <input type="search" id="graphSearchInput" placeholder="Search function, class, or file..." />
@@ -845,7 +852,7 @@
           </div>
         </div>
         <div style="display:flex; flex-direction:column; flex:1; min-height:220px;">
-          <h3 style="margin-top:4px;">Top PageRank Symbol Hubs</h3>
+          <h3 style="margin-top:4px;">Top PageRank Symbol Hubs <span class="info-tip" tabindex="0" data-tip="How to read: Longest bars are your codebase's most-called core symbols. Good: Core entrypoints/utilities rank highest, letting TokWiz prioritize them in graph queries. Bad: Empty chart means the repo has no indexed call edges yet.">ⓘ</span></h3>
           <p class="sidebar-hint">Most heavily connected architectural hubs ranked by Personalized PageRank centrality.</p>
           <div class="hubs-chart-wrap">
             <canvas id="hubsChartCanvas"></canvas>
@@ -859,21 +866,21 @@
   <section class="charts-grid" aria-label="Analytics Charts">
     <div class="chart-card">
       <div class="chart-header">
-        <h2>Forecasted Cost vs. Real Billed Cost per Prompt</h2>
+        <h2>Forecasted Cost vs. Real Billed Cost per Prompt <span class="info-tip" tabindex="0" data-tip="How to read: Compares pre-prompt Forecast $ vs. actual Real $ per turn. Good: Lines track closely (MAPE <= 20%, Real <= Forecast). Bad: Real $ spikes far above Forecast $ (usually EXTRA_TOOL_LOOPS or CACHE_MISS_DRIFT).">ⓘ</span></h2>
         <span class="chart-subtitle">Dual-Line & Residual Error (ΔC in $ USD)</span>
       </div>
       <div class="chart-viewport">
         <canvas id="costVarianceCanvas"></canvas>
         <div class="chart-empty-overlay" id="costVarianceEmpty">
-          No reconciled turns yet — run a prompt in this workspace (or click "Preview Sample Session" above) to chart Forecast vs. Real $.
+          No reconciled turns yet — run a prompt in this workspace to chart Forecast vs. Real $.
         </div>
       </div>
     </div>
 
     <div class="chart-card">
       <div class="chart-header">
-        <h2>Unoptimized Baseline vs. TokWiz Workflow Tokens</h2>
-        <span class="chart-subtitle">Per-Turn Token Consumption Comparison</span>
+        <h2>Unoptimized Baseline vs. TokWiz Workflow Tokens <span class="info-tip" tabindex="0" data-tip="How to read: Both bars use cache-weighted effective tokens (cached reads at 0.1x). Good: Green (TokWiz) is noticeably shorter than Red (Baseline) — the gap is tokens saved. Bad: Equal height = 0 savings (agent read full files); Green > Red = extra tool loops.">ⓘ</span></h2>
+        <span class="chart-subtitle">Per-Turn Cache-Weighted Token Comparison</span>
       </div>
       <div class="chart-viewport">
         <canvas id="tokensTimelineCanvas"></canvas>
@@ -885,7 +892,7 @@
 
     <div class="chart-card">
       <div class="chart-header">
-        <h2>Token Breakdown by Execution Phase</h2>
+        <h2>Token Breakdown by Execution Phase <span class="info-tip" tabindex="0" data-tip="How to read: Shows where tokens went across Context Input, Graph/Skill, Tool Output, Reasoning, and Output. Good: Graph/Skill stays tiny (<5%) and Tool Output stays compact. Bad: Context Input or Tool Output >70% means raw files or noisy logs entered context.">ⓘ</span></h2>
         <span class="chart-subtitle">Context, Graph Slice, Tool Output, Reasoning & Output</span>
       </div>
       <div class="chart-viewport">
@@ -898,7 +905,7 @@
 
     <div class="chart-card">
       <div class="chart-header">
-        <h2>Model Cost Comparison (Forecasted vs. Real vs. Saved $)</h2>
+        <h2>Model Cost Comparison (Forecasted vs. Real vs. Saved $) <span class="info-tip" tabindex="0" data-tip="How to read: Grouped bars per AI model for Forecast $, Real $, and Net Saved $. Good: Tall green Saved $ bar and Forecast $ close to Real $. Bad: Zero Saved $ bar or Real $ far above Forecast $ (try routing simpler prompts to a lighter model).">ⓘ</span></h2>
         <span class="chart-subtitle">Cross-Provider Spend & Savings ($ USD)</span>
       </div>
       <div class="chart-viewport">
@@ -1973,6 +1980,17 @@
       emptyEl.style.display = "none";
       const ct = getChartTheme();
 
+      const effTok = (t) => {
+        const rIn = Number(t.real_input_tokens || 0);
+        const rCache = Number(t.real_cached_input_tokens || 0);
+        const rReas = Number(t.real_reasoning_tokens || 0);
+        const rOut = Number(t.real_output_tokens || 0);
+        if (rIn + rReas + rOut > 0) {
+          return Math.max(0, rIn - rCache) + Math.round(rCache * 0.1) + rReas + rOut;
+        }
+        return Number(t.real_total_tokens || 0);
+      };
+
       const labels = turns.map((t, i) => `T${i + 1} [P-${t.profile_code}]`);
       chartInstances.tokensTimeline = new Chart(canvas, {
         type: "bar",
@@ -1980,7 +1998,7 @@
           labels,
           datasets: [
             {
-              label: "Unoptimized Baseline Tokens",
+              label: "Unoptimized Baseline (Cache-Weighted)",
               data: turns.map(t => t.unoptimized_baseline_tokens),
               backgroundColor: "rgba(251, 113, 133, 0.68)",
               borderColor: "#fb7185",
@@ -1988,8 +2006,8 @@
               borderRadius: 6
             },
             {
-              label: "Real TokWiz Workflow Tokens",
-              data: turns.map(t => t.real_total_tokens),
+              label: "Effective TokWiz Tokens (Cache-Weighted)",
+              data: turns.map(effTok),
               backgroundColor: "rgba(52, 211, 153, 0.82)",
               borderColor: "#34d399",
               borderWidth: 1,
