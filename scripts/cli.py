@@ -342,6 +342,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             "  filter [-- <cmd>]       Compress noisy test, build, and git shell outputs\n"
             "  stats [--session|--days N]  Display token savings & Forecast-vs-Real cost report\n"
             "  verify-ab [--json]      Verify head-to-head A/B savings from real IDE transcripts\n"
+            "  live-ab [--agent ...]   Run automated headless A/B tests via claude/codex/gemini CLI\n"
             "  dashboard [--port 8420] Launch interactive local analytics web dashboard\n"
             "  benchmark [--json]      Run paired A/B token savings & MAPE benchmark suite\n"
             "  level <1|2|3|auto>      Configure optimization level\n"
@@ -378,6 +379,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         return int(mod.main(rest))
     if cmd == "verify-ab":
         return _cmd_verify_ab(rest)
+    if cmd == "live-ab":
+        spec = importlib.util.spec_from_file_location(
+            "run_live_ab", _REPO_ROOT / "evaluations" / "run-live-ab.py"
+        )
+        assert spec and spec.loader
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["run_live_ab"] = mod
+        spec.loader.exec_module(mod)
+        return int(mod.main(rest))
     if cmd == "dashboard":
         spec = importlib.util.spec_from_file_location(
             "dashboard_server", _REPO_ROOT / "dashboard" / "server.py"
