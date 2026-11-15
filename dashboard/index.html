@@ -512,14 +512,10 @@
       letter-spacing: 0;
     }
     .info-tip:hover, .info-tip:focus-visible { color: var(--accent); border-color: var(--accent); }
-    .info-tip:hover::after,
-    .info-tip:focus-visible::after {
-      content: attr(data-tip);
-      position: absolute;
-      bottom: calc(100% + 8px);
-      left: 50%;
-      transform: translateX(-50%);
-      width: 285px;
+    .global-info-tip {
+      position: fixed;
+      display: none;
+      max-width: 290px;
       padding: 8px 10px;
       border-radius: 8px;
       background: var(--card);
@@ -531,15 +527,8 @@
       white-space: normal;
       text-align: left;
       box-shadow: var(--shadow-lg);
-      z-index: 80;
+      z-index: 9999;
       pointer-events: none;
-    }
-    .chart-header .info-tip:hover::after,
-    .chart-header .info-tip:focus-visible::after,
-    .graph-header .info-tip:hover::after,
-    .graph-header .info-tip:focus-visible::after {
-      left: 0;
-      transform: none;
     }
 
     /* Documentation-Style Help Modal with Left Navigation */
@@ -1820,7 +1809,9 @@
       }
     }
 
+    let _lastTopHubs = null;
     function renderHubsChart(hubs) {
+      _lastTopHubs = hubs;
       const top = hubs.slice(0, 7);
       const canvas = document.getElementById("hubsChartCanvas");
       destroyChart("hubs");
@@ -2472,12 +2463,61 @@
       if (_lastStatsPayload) {
         _origRenderDashboard(_lastStatsPayload);
       }
+      if (_lastTopHubs) {
+        renderHubsChart(_lastTopHubs);
+      }
       if (typeof draw3DScene === "function") {
         try { draw3DScene(); } catch (_e) {}
       }
     }
 
     setup3DInteractions();
+
+    (function initFloatingInfoTips() {
+      if (!document.body) return;
+      const tipEl = document.createElement("div");
+      tipEl.className = "global-info-tip";
+      document.body.appendChild(tipEl);
+
+      function showTip(target) {
+        const text = target && target.getAttribute ? target.getAttribute("data-tip") : "";
+        if (!text) return;
+        tipEl.textContent = text;
+        tipEl.style.display = "block";
+        const rect = target.getBoundingClientRect();
+        const tipRect = tipEl.getBoundingClientRect();
+        const vw = window.innerWidth || 1280;
+        let left = rect.left + rect.width / 2 - tipRect.width / 2;
+        left = Math.max(12, Math.min(left, vw - tipRect.width - 12));
+        let top = rect.top - tipRect.height - 8;
+        if (top < 10) {
+          top = rect.bottom + 8;
+        }
+        tipEl.style.left = `${Math.round(left)}px`;
+        tipEl.style.top = `${Math.round(top)}px`;
+      }
+
+      function hideTip() {
+        tipEl.style.display = "none";
+      }
+
+      document.addEventListener("mouseover", (e) => {
+        const tip = e.target && e.target.closest ? e.target.closest(".info-tip") : null;
+        if (tip) showTip(tip);
+      });
+      document.addEventListener("mouseout", (e) => {
+        const tip = e.target && e.target.closest ? e.target.closest(".info-tip") : null;
+        if (tip) hideTip();
+      });
+      document.addEventListener("focusin", (e) => {
+        const tip = e.target && e.target.closest ? e.target.closest(".info-tip") : null;
+        if (tip) showTip(tip);
+      });
+      document.addEventListener("focusout", (e) => {
+        const tip = e.target && e.target.closest ? e.target.closest(".info-tip") : null;
+        if (tip) hideTip();
+      });
+    })();
 
     const savedTheme = (() => {
       try { return localStorage.getItem("tokwiz-theme") || "dark"; } catch (_e) { return "dark"; }
