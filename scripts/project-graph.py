@@ -848,8 +848,13 @@ class ProjectGraph:
         elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
         return f"[TokWiz Trace: {source_query} -> {target_query} ({len(chain) - 1} hops, {elapsed_ms}ms)]\n" + "\n".join(lines)
 
-    def export_graph_data(self, max_nodes: int = 120, auto_build: bool = True) -> Dict[str, object]:
-        """Export nodes, edges, PageRank scores, and structural stats for the web visualizer."""
+    def export_graph_data(
+        self,
+        max_nodes: int = 120,
+        auto_build: bool = True,
+        expand_id: Optional[str] = None,
+    ) -> Dict[str, object]:
+        """Export hierarchical nodes, edges, PageRank scores, and optional expanded neighborhood."""
         if auto_build:
             self.build(force=False)
 
@@ -900,43 +905,71 @@ class ProjectGraph:
             lg = str(fr["language"])
             lang_counts[lg] = lang_counts.get(lg, 0) + 1
 
-        # Select top nodes by PageRank + degree so graph visualization stays crisp
-        ranked_ids = sorted(
-            nodes_by_id.keys(),
-            key=lambda nid: (
+        # Select top-hierarchy nodes up to max_nodes (files -> classes -> top PageRank functions/methods)
+        def _hier_rank(nid: str) -> Tuple[int, float, int]:
+            kind = str(nodes_by_id[nid]["kind"])
+            tier = 2 if kind == "file" else (1 if kind in ("class", "interface", "module") else 0)
+            return (
+                tier,
                 pr_scores.get(nid, 0.0),
                 in_degree.get(nid, 0) + out_degree.get(nid, 0),
-            ),
-            reverse=True,
-        )[:max_nodes]
-        kept_set = set(ranked_ids)
-
-        export_nodes: List[Dict[str, object]] = []
-        for nid in ranked_ids:
-            nd = nodes_by_id[nid]
-            export_nodes.append(
-                {
-                    "id": nid,
-                    "name": nd["name"],
-                    "qualified_name": nd["qualified_name"],
-                    "kind": nd["kind"],
-                    "file_path": nd["file_path"],
-                    "start_line": nd["start_line"],
-                    "end_line": nd["end_line"],
-                    "signature": nd["signature"],
-                    "pagerank": round(pr_scores.get(nid, 0.0) * 100.0, 3),
-                    "in_degree": in_degree.get(nid, 0),
-                    "out_degree": out_degree.get(nid, 0),
-                }
             )
+
+        ranked_ids = sorted(nodes_by_id.keys(), key=_hier_rank, reverse=True)[:max_nodes]
+        kept_set = set(ranked_ids)
+        expanded_added_count = 0
+
+        if expand_id and expand_id in nodes_by_id:
+            extra_candidates: List[str] = []
+            if expand_id not in kept_set:
+                extra_candidates.append(expand_id)
+            target_nd = nodes_by_id[expand_id]
+            for nb in adjacency.get(expand_id, []):
+                if nb not in kept_set and nb not in extra_candidates:
+                    extra_candidates.append(nb)
+            if str(target_nd["kind"]) == "file":
+                fp = str(target_nd["file_path"])
+                for nid, nd in nodes_by_id.items():
+                    if str(nd["file_path"]) == fp and nid not in kept_set and nid not in extra_candidates:
+                        extra_candidates.append(nid)
+            extra_candidates.sort(
+                key=lambda nid: (pr_scores.get(nid, 0.0), in_degree.get(nid, 0) + out_degree.get(nid, 0)),
+                reverse=True,
+            )
+            for eid in extra_candidates[:80]:
+                if eid not in kept_set:
+                    kept_set.add(eid)
+                    ranked_ids.append(eid)
+                    expanded_added_count += 1
+
+        def _node_dict(nid: str) -> Dict[str, object]:
+            nd = nodes_by_id[nid]
+            return {
+                "id": nid,
+                "name": nd["name"],
+                "qualified_name": nd["qualified_name"],
+                "kind": nd["kind"],
+                "file_path": nd["file_path"],
+                "start_line": nd["start_line"],
+                "end_line": nd["end_line"],
+                "signature": nd["signature"],
+                "pagerank": round(pr_scores.get(nid, 0.0) * 100.0, 3),
+                "in_degree": in_degree.get(nid, 0),
+                "out_degree": out_degree.get(nid, 0),
+            }
+
+        export_nodes: List[Dict[str, object]] = [_node_dict(nid) for nid in ranked_ids]
 
         export_edges = [
             e for e in resolved_edges if e["source"] in kept_set and e["target"] in kept_set
         ]
 
-        top_hubs = [
-            n for n in export_nodes if n["kind"] != "file"
-        ][:10]
+        non_file_ranked = sorted(
+            [nid for nid, nd in nodes_by_id.items() if nd["kind"] != "file"],
+            key=lambda nid: (pr_scores.get(nid, 0.0), in_degree.get(nid, 0) + out_degree.get(nid, 0)),
+            reverse=True,
+        )[:10]
+        top_hubs = [_node_dict(nid) for nid in non_file_ranked]
 
         return {
             "total_files": len(file_rows),
@@ -947,6 +980,8 @@ class ProjectGraph:
             "top_hubs": top_hubs,
             "nodes": export_nodes,
             "edges": export_edges,
+            "expanded_node_id": expand_id if (expand_id and expand_id in nodes_by_id) else None,
+            "expanded_added_count": expanded_added_count,
         }
 
 

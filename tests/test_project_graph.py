@@ -272,6 +272,20 @@ class TestProjectGraphAndSkeletonizer(unittest.TestCase):
         self.assertIn("CREATE TABLE users", sql_skel)
         self.assertIn("similar INSERT rows omitted", sql_skel)
 
+    def test_hierarchical_graph_export_and_expand(self) -> None:
+        graph = graph_mod.ProjectGraph(self.root)
+        graph.build()
+        base = graph.export_graph_data(max_nodes=4, auto_build=False)
+        self.assertLessEqual(len(base["nodes"]), 4)
+        self.assertIsNone(base["expanded_node_id"])
+        # File hubs should be prioritized in top-hierarchy export
+        self.assertTrue(any(n["kind"] == "file" for n in base["nodes"]))
+
+        file_node = next(n for n in base["nodes"] if n["kind"] == "file")
+        expanded = graph.export_graph_data(max_nodes=4, auto_build=False, expand_id=str(file_node["id"]))
+        self.assertEqual(expanded["expanded_node_id"], file_node["id"])
+        self.assertGreaterEqual(len(expanded["nodes"]), len(base["nodes"]))
+
 
 if __name__ == "__main__":
     unittest.main()

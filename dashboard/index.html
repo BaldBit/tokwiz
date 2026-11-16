@@ -858,7 +858,7 @@
       <div class="graph-stage" id="graphStage">
         <canvas id="projectGraphCanvas"></canvas>
         <div class="graph-hud-top">
-          <span>🖱️ Drag: Rotate Graph · Scroll: Zoom · Click Node: Inspect Symbol & 1-Hop Callers/Callees</span>
+          <span id="graphHudText">🖱️ Drag: Rotate · Scroll: Zoom · Click Node: Expand Hierarchy &amp; Inspect</span>
         </div>
         <div class="graph-zoom-controls">
           <button id="zoomInBtn" type="button" title="Zoom In">+</button>
@@ -1253,6 +1253,8 @@
       projected: new Map(),
       selectedNode: null,
       hoveredNode: null,
+      expandedNodeId: null,
+      baseGraphData: null,
       searchTerm: "",
       edgeFilter: "ALL",
       yaw: 0.45,
@@ -1266,11 +1268,15 @@
       animLoopActive: false
     };
 
-    function init3DGraph(graphData) {
+    function init3DGraph(graphData, preserveCamera = false) {
       document.getElementById("kpiGraphNodes").textContent = `${graphData.total_nodes || 0} nodes`;
       document.getElementById("kpiGraphSub").textContent = `${graphData.total_files || 0} files · ${graphData.total_edges || 0} edges (SQLite AST index)`;
+      if (!preserveCamera) {
+        graph3D.baseGraphData = graphData;
+        graph3D.expandedNodeId = null;
+      }
 
-      const rawNodes = (graphData.nodes || []).slice(0, 75);
+      const rawNodes = graphData.nodes || [];
       const nodeIds = new Set(rawNodes.map(n => n.id));
       const edges = (graphData.edges || []).filter(
         e => nodeIds.has(e.source) && nodeIds.has(e.target)
@@ -1325,6 +1331,19 @@
       });
 
       graph3D.edges = edges;
+
+      const hudEl = document.getElementById("graphHudText");
+      if (hudEl) {
+        const totalN = graphData.total_nodes || graph3D.nodes.length;
+        if (graphData.expanded_node_id) {
+          const expNd = graph3D.nodes.find(n => n.id === graphData.expanded_node_id);
+          const expName = expNd ? expNd.name : graphData.expanded_node_id;
+          const added = Number(graphData.expanded_added_count || 0);
+          hudEl.textContent = `Expanded ${expName} (+${added} neighbors) · ${graph3D.nodes.length} / ${totalN} nodes · Click another node to switch`;
+        } else {
+          hudEl.textContent = `Showing ${graph3D.nodes.length} / ${totalN} nodes (top hierarchy) · Click any node to expand`;
+        }
+      }
 
       const nodeMap = new Map(graph3D.nodes.map(n => [n.id, n]));
       for (let step = 0; step < 60; step++) {
@@ -1698,6 +1717,28 @@
       draw3DScene();
     }
 
+    async function toggleExpand3DNode(node) {
+      if (!node) return;
+      if (graph3D.expandedNodeId === node.id && graph3D.baseGraphData) {
+        graph3D.expandedNodeId = null;
+        init3DGraph(graph3D.baseGraphData, true);
+        const restored = graph3D.nodes.find(n => n.id === node.id);
+        if (restored) select3DNode(restored);
+        return;
+      }
+      select3DNode(node);
+      try {
+        const res = await fetch(`/api/graph?expand=${encodeURIComponent(node.id)}`);
+        const expandedData = await res.json();
+        if (expandedData && expandedData.nodes) {
+          graph3D.expandedNodeId = node.id;
+          init3DGraph(expandedData, true);
+          const target = graph3D.nodes.find(n => n.id === node.id);
+          if (target) select3DNode(target);
+        }
+      } catch (_err) {}
+    }
+
     function setup3DInteractions() {
       const canvas = document.getElementById("projectGraphCanvas");
 
@@ -1753,7 +1794,13 @@
         if (graph3D.isDragging && !graph3D.dragMoved) {
           const pos = getCanvasPos(evt);
           const hit = findHitNode(pos.x, pos.y);
-          if (hit) select3DNode(hit);
+          if (hit) {
+            toggleExpand3DNode(hit);
+          } else if (graph3D.expandedNodeId && graph3D.baseGraphData) {
+            graph3D.expandedNodeId = null;
+            graph3D.selectedNode = null;
+            init3DGraph(graph3D.baseGraphData, true);
+          }
         }
         graph3D.isDragging = false;
       });

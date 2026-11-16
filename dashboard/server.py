@@ -103,8 +103,13 @@ def create_handler(workspace_root: Path):
                 qs = parse_qs(parsed.query)
                 max_n_param = qs.get("max_nodes", ["120"])[0]
                 max_nodes = int(max_n_param) if str(max_n_param).isdigit() else 120
+                expand_id = qs.get("expand", [None])[0]
                 graph = ProjectGraph(root_dir=active_root)
-                graph_data = graph.export_graph_data(max_nodes=max_nodes, auto_build=True)
+                graph_data = graph.export_graph_data(
+                    max_nodes=max_nodes,
+                    auto_build=(expand_id is None),
+                    expand_id=expand_id,
+                )
                 body = json.dumps(graph_data).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
