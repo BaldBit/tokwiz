@@ -112,6 +112,15 @@ git clone https://github.com/BaldBit/tokwiz.git && cd tokwiz && pip install -e .
 > ```
 > Append the matching line to `~/.zshrc` (macOS) or `~/.bashrc` (Linux), then run `source ~/.zshrc` (or `source ~/.bashrc`).
 
+### Updating TokWiz
+```bash
+# Check for a newer release
+tokwiz update --check
+
+# Update TokWiz runtime and refresh hooks/skills in the current project
+tokwiz update
+```
+
 ### 2. Wire into Your AI Agents (`tokwiz init`)
 ```bash
 # Configure Claude Code, OpenAI Codex CLI, Gemini / Antigravity, and Cursor in the current repo

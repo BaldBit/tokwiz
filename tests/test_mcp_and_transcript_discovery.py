@@ -169,6 +169,13 @@ class TestMCPServerAndTranscriptDiscovery(unittest.TestCase):
             self.assertEqual(len(found_codex), 1)
             self.assertEqual(found_codex[0]["prompt"], "Check auth.py")
             self.assertEqual(found_codex[0]["usage_payload"]["agent_host"], "codex")
+
+            # Verify pre-init transcripts are ignored once `.tokwiz/config.json` has `installed_at`
+            (self.ws / ".tokwiz").mkdir(parents=True, exist_ok=True)
+            future_ts = codex_log.stat().st_mtime + 3600.0
+            (self.ws / ".tokwiz" / "config.json").write_text(json.dumps({"installed_at": future_ts}), encoding="utf-8")
+            self.assertEqual(post_mod._find_workspace_transcript_turns(self.ws), [])
+            (self.ws / ".tokwiz" / "config.json").unlink()
         finally:
             for k, v in (("TOKWIZ_CLAUDE_PROJECTS_DIR", saved_c), ("TOKWIZ_CODEX_DIR", saved_x), ("TOKWIZ_BRAIN_DIR", saved_b)):
                 if v is None:

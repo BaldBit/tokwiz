@@ -766,11 +766,50 @@ def _parse_codex_transcript_turns(
     return turns if cwd_matched else []
 
 
+def _get_installed_at(workspace_root: Path) -> Optional[float]:
+    cfg_path = workspace_root / ".tokwiz" / "config.json"
+    if not cfg_path.exists():
+        return None
+    try:
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        val = cfg.get("installed_at")
+        return float(val) if val is not None else None
+    except Exception:
+        return None
+
+
+def _parse_iso_ts(raw_ts: object) -> Optional[float]:
+    s = str(raw_ts or "").strip()
+    if not s:
+        return None
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return None
+
+
+def _filter_post_init_turns(
+    turns: List[Dict[str, object]],
+    installed_at: Optional[float],
+) -> List[Dict[str, object]]:
+    if installed_at is None:
+        return turns
+    filtered: List[Dict[str, object]] = []
+    for t in turns:
+        ts = _parse_iso_ts(t.get("created_at"))
+        if ts is not None and ts < installed_at:
+            continue
+        filtered.append(t)
+    return filtered
+
+
 def _find_workspace_transcript_turns(
     workspace_root: Path,
     brain_dir: Optional[Path] = None,
 ) -> List[Dict[str, object]]:
     """Find the most recent Antigravity, Claude Code, or Codex transcript matching `workspace_root`."""
+    installed_at = _get_installed_at(workspace_root)
     candidates: List[Tuple[str, Path]] = []
 
     # 1. Antigravity transcripts
@@ -784,6 +823,8 @@ def _find_workspace_transcript_turns(
             if not tf.exists():
                 tf = child / ".system_generated" / "logs" / "transcript.jsonl"
             if tf.exists():
+                if installed_at is not None and tf.stat().st_mtime < installed_at:
+                    continue
                 candidates.append(("antigravity", tf))
 
     # 2. Claude Code transcripts (~/.claude/projects/<slug>/*.jsonl)
@@ -791,11 +832,15 @@ def _find_workspace_transcript_turns(
     c_root = Path(env_claude) if env_claude else (Path.home() / ".claude" / "projects")
     slug_dir = c_root / _claude_project_slug(workspace_root)
     if slug_dir.exists() and slug_dir.is_dir():
-        claude_files = sorted(slug_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime)
+        claude_files = [
+            p for p in sorted(slug_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime)
+            if installed_at is None or p.stat().st_mtime >= installed_at
+        ]
         if claude_files:
             agg_turns: List[Dict[str, object]] = []
             for jf in claude_files[-10:]:
                 agg_turns.extend(_parse_claude_transcript_turns(jf, workspace_root))
+            agg_turns = _filter_post_init_turns(agg_turns, installed_at)
             if agg_turns:
                 return agg_turns
 
@@ -804,6 +849,8 @@ def _find_workspace_transcript_turns(
     x_root = Path(env_codex) if env_codex else (Path.home() / ".codex" / "sessions")
     if x_root.exists() and x_root.is_dir():
         for jf in x_root.rglob("*.jsonl"):
+            if installed_at is not None and jf.stat().st_mtime < installed_at:
+                continue
             candidates.append(("codex", jf))
 
     candidates.sort(key=lambda item: item[1].stat().st_mtime, reverse=True)
@@ -814,6 +861,7 @@ def _find_workspace_transcript_turns(
             turns = _parse_claude_transcript_turns(tf, workspace_root)
         else:
             turns = _parse_codex_transcript_turns(tf, workspace_root)
+        turns = _filter_post_init_turns(turns, installed_at)
         if turns:
             return turns
     return []
