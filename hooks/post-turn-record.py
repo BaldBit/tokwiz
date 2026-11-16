@@ -417,9 +417,13 @@ def _parse_antigravity_transcript_turns(transcript_path: Path, target_workspace:
                 completed_turns.append(cur)
             raw_c = str(s.get("content", ""))
             m = re.search(r"<USER_REQUEST>(.*?)</USER_REQUEST>", raw_c, re.S)
-            prompt = m.group(1).strip() if m else raw_c.strip()
+            prompt = _clean_user_prompt(m.group(1).strip() if m else raw_c.strip())
+            if not prompt:
+                cur = None
+                continue
             cur = {
                 "prompt": prompt,
+                "created_at": str(s.get("created_at") or ""),
                 "start_step": int(s.get("step_index", idx_step)),
                 "steps": 0,
                 "input_tok": max(1, math.ceil(len(raw_c) / 4)),
