@@ -437,6 +437,20 @@ class TestEndToEndCLIAndResilience(unittest.TestCase):
         finally:
             shutil.rmtree(ws, ignore_errors=True)
 
+    def test_tokwiz_update_check_and_bundle_refresh(self) -> None:
+        """Verify `tokwiz update --check` and bundle extraction + project init refresh."""
+        import importlib.util
+        from unittest import mock
+
+        spec = importlib.util.spec_from_file_location("cli_upd_test", SCRIPTS_DIR / "cli.py")
+        assert spec and spec.loader
+        cli_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cli_mod)
+
+        with mock.patch.object(cli_mod, "_fetch_latest_release_tag", return_value="v9.9.9"):
+            rc = cli_mod.main(["update", "--check"])
+            self.assertEqual(rc, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

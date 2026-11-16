@@ -6,7 +6,9 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -277,6 +279,104 @@ def _cmd_init(argv: List[str]) -> int:
     return 0
 
 
+def _current_version() -> str:
+    try:
+        init_py = _REPO_ROOT / "scripts" / "__init__.py"
+        if init_py.exists():
+            m = re.search(r'__version__\s*=\s*"([^"]+)"', init_py.read_text(encoding="utf-8"))
+            if m:
+                return m.group(1)
+    except Exception:
+        pass
+    return "0.0.0"
+
+
+def _fetch_latest_release_tag() -> str:
+    from urllib.request import Request, urlopen
+
+    req = Request(
+        "https://api.github.com/repos/BaldBit/tokwiz/releases/latest",
+        headers={"Accept": "application/vnd.github+json", "User-Agent": "tokwiz-cli"},
+    )
+    with urlopen(req, timeout=10) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    return str(data.get("tag_name") or "").strip()
+
+
+def _cmd_update(argv: List[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="tokwiz update",
+        description="Update TokWiz runtime from GitHub Releases (or git) and refresh project hooks.",
+    )
+    parser.add_argument("--check", action="store_true", help="Check latest release version without modifying files")
+    parser.add_argument("--version", default="latest", help="Target release tag (e.g. v1.4.1) or 'latest'")
+    parser.add_argument("--root", default=".", help="Optional project root to refresh via `tokwiz init`")
+    parser.add_argument("--init", action="store_true", help="Force re-running `tokwiz init --agent all` after update")
+    args = parser.parse_args(argv)
+
+    cur_ver = _current_version()
+    if args.check:
+        try:
+            latest = _fetch_latest_release_tag()
+        except Exception as exc:
+            print(f"[TokWiz Update] Failed to check latest release: {exc}", file=sys.stderr)
+            return 1
+        cur_tag = f"v{cur_ver}" if not cur_ver.startswith("v") else cur_ver
+        if latest and latest != cur_tag:
+            print(f"[TokWiz Update] Update available: {cur_tag} -> {latest} (run `tokwiz update`)")
+        else:
+            print(f"[TokWiz Update] Already up to date ({cur_tag}).")
+        return 0
+
+    if (_REPO_ROOT / ".git").exists():
+        print(f"[TokWiz Update] Source install detected at {_REPO_ROOT}; pulling latest...")
+        proc = subprocess.run(
+            ["git", "-C", str(_REPO_ROOT), "pull", "--ff-only"],
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode != 0:
+            print(f"[TokWiz Update] git pull failed:\n{proc.stderr.strip()}", file=sys.stderr)
+            return proc.returncode
+        if proc.stdout.strip():
+            print(proc.stdout.strip())
+    else:
+        import tarfile
+        import tempfile
+        from urllib.request import Request, urlopen
+
+        ver = args.version
+        if ver == "latest":
+            bundle_url = "https://github.com/BaldBit/tokwiz/releases/latest/download/tokwiz-bundle.tar.gz"
+        else:
+            tag = ver if ver.startswith("v") else f"v{ver}"
+            bundle_url = f"https://github.com/BaldBit/tokwiz/releases/download/{tag}/tokwiz-bundle.tar.gz"
+
+        print(f"[TokWiz Update] Downloading {bundle_url}...")
+        with tempfile.TemporaryDirectory(prefix="tokwiz_upd_") as tmp_dir:
+            tar_path = Path(tmp_dir) / "tokwiz-bundle.tar.gz"
+            req = Request(bundle_url, headers={"User-Agent": "tokwiz-cli"})
+            with urlopen(req, timeout=30) as resp:
+                tar_path.write_bytes(resp.read())
+            stage_dir = Path(tmp_dir) / "stage"
+            stage_dir.mkdir(parents=True, exist_ok=True)
+            with tarfile.open(str(tar_path), "r:gz") as tf:
+                for member in tf.getmembers():
+                    if os.path.isabs(member.name) or ".." in Path(member.name).parts:
+                        raise ValueError(f"Unsafe archive entry: {member.name}")
+                tf.extractall(str(stage_dir))
+            extracted = stage_dir / "tokwiz"
+            if not extracted.is_dir():
+                extracted = stage_dir
+            shutil.copytree(str(extracted), str(_REPO_ROOT), dirs_exist_ok=True)
+        print(f"[TokWiz Update] Updated runtime to {_current_version()} at {_REPO_ROOT}")
+
+    target_root = _resolve_root(args.root)
+    if args.init or (target_root / ".tokwiz").exists():
+        return _cmd_init(["--agent", "all", "--root", str(target_root)])
+    return 0
+
+
 def _cmd_level(argv: List[str]) -> int:
     parser = argparse.ArgumentParser(prog="tokwiz level", description="Set optimization level (1, 2, 3, or auto).")
     parser.add_argument("level", choices=["1", "2", "3", "auto"], help="Target optimization level")
@@ -391,7 +491,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             "  dashboard [--port 8420] Launch interactive local analytics web dashboard\n"
             "  benchmark [--json]      Run paired A/B token savings & MAPE benchmark suite\n"
             "  level <1|2|3|auto>      Configure optimization level\n"
-            "  budget --max-prompt-cost <usd>  Configure prompt cost threshold"
+            "  budget --max-prompt-cost <usd>  Configure prompt cost threshold\n"
+            "  update [--check]        Update TokWiz runtime and refresh project hooks"
         )
         return 0 if args_list else 1
 
@@ -458,6 +559,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _cmd_level(rest)
     if cmd == "budget":
         return _cmd_budget(rest)
+    if cmd == "update":
+        return _cmd_update(rest)
 
     print(f"Unknown command: {cmd}", file=sys.stderr)
     return 1
