@@ -101,6 +101,17 @@ curl -fsSL https://github.com/BaldBit/tokwiz/releases/latest/download/tokwiz.pyz
 git clone https://github.com/BaldBit/tokwiz.git && cd tokwiz && pip install -e .
 ```
 
+> **If `tokwiz: command not found` after installing:**
+> `install.sh` places `tokwiz` in `~/.local/bin`, and `pip install --user` places it in Python's user `bin` directory. Add it to your `PATH`:
+> ```bash
+> # For ~/.local/bin (install.sh / pipx):
+> export PATH="$HOME/.local/bin:$PATH"
+>
+> # Or for pip --user installs:
+> export PATH="$(python3 -m site --user-base)/bin:$PATH"
+> ```
+> Append the matching line to `~/.zshrc` (macOS) or `~/.bashrc` (Linux), then run `source ~/.zshrc` (or `source ~/.bashrc`).
+
 ### 2. Wire into Your AI Agents (`tokwiz init`)
 ```bash
 # Configure Claude Code, OpenAI Codex CLI, Gemini / Antigravity, and Cursor in the current repo
