@@ -279,6 +279,174 @@ def _cmd_init(argv: List[str]) -> int:
     return 0
 
 
+def _remove_tokwiz_hooks_from_file(path: Path) -> bool:
+    if not path.exists():
+        return False
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    if not isinstance(data, dict):
+        return False
+    hooks = data.get("hooks")
+    if not isinstance(hooks, dict):
+        return False
+
+    changed = False
+    markers = ("pre-prompt-predict.py", "pre-tool-guard.py", "post-turn-record.py")
+    for event_name in list(hooks.keys()):
+        entries = hooks.get(event_name)
+        if not isinstance(entries, list):
+            continue
+        kept = [e for e in entries if not any(m in json.dumps(e) for m in markers)]
+        if len(kept) != len(entries):
+            changed = True
+        if kept:
+            hooks[event_name] = kept
+        else:
+            hooks.pop(event_name, None)
+
+    if not changed:
+        return False
+    if not hooks:
+        data.pop("hooks", None)
+    if not data:
+        path.unlink(missing_ok=True)
+    else:
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return True
+
+
+def _unregister_mcp_server(path: Path) -> bool:
+    if not path.exists():
+        return False
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    if not isinstance(data, dict):
+        return False
+    servers = data.get("mcpServers")
+    if not isinstance(servers, dict) or "tokwiz" not in servers:
+        return False
+    servers.pop("tokwiz", None)
+    if not servers:
+        data.pop("mcpServers", None)
+    if not data:
+        path.unlink(missing_ok=True)
+    else:
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return True
+
+
+def _remove_tokwiz_lines(path: Path, needles: Tuple[str, ...]) -> bool:
+    if not path.exists():
+        return False
+    raw_lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    kept = [ln for ln in raw_lines if not any(n in ln for n in needles)]
+    if len(kept) == len(raw_lines):
+        return False
+    while kept and not kept[-1].strip():
+        kept.pop()
+    if not kept:
+        path.unlink(missing_ok=True)
+    else:
+        path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+    return True
+
+
+def _cleanup_empty_dirs(dirs: List[Path]) -> None:
+    for d in dirs:
+        try:
+            if d.is_dir() and not any(d.iterdir()):
+                d.rmdir()
+        except Exception:
+            pass
+
+
+def _cmd_uninstall(argv: List[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="tokwiz uninstall",
+        description="Safely remove TokWiz hooks, MCP entries, skills, and data without harming project files.",
+    )
+    parser.add_argument("--root", default=".", help="Repository root directory")
+    parser.add_argument("--global", dest="is_global", action="store_true", help="Remove global home-directory integrations")
+    parser.add_argument("--home", default=None, help="Optional home directory override (used with --global)")
+    parser.add_argument("--keep-data", action="store_true", help="Keep .tokwiz/ telemetry and graph database")
+    parser.add_argument("--purge-runtime", action="store_true", help="Also remove global ~/.tokwiz/runtime and ~/.local/bin/tokwiz")
+    args = parser.parse_args(argv)
+
+    target_root = _resolve_root(args.root)
+    base_dir = _resolve_root(args.home) if (args.is_global and args.home) else (
+        Path.home() if args.is_global else target_root
+    )
+
+    removed: List[str] = []
+
+    for skill_dir in (base_dir / ".claude" / "skills" / "tokwiz", base_dir / ".agents" / "skills" / "tokwiz"):
+        if skill_dir.exists():
+            shutil.rmtree(skill_dir, ignore_errors=True)
+            removed.append(str(skill_dir.relative_to(base_dir)))
+
+    gem_rule = base_dir / ".agents" / "rules" / "tokwiz.md"
+    if gem_rule.exists():
+        gem_rule.unlink(missing_ok=True)
+        removed.append(str(gem_rule.relative_to(base_dir)))
+
+    for hook_file in (base_dir / ".claude" / "settings.json", base_dir / ".agents" / "hooks.json"):
+        if _remove_tokwiz_hooks_from_file(hook_file):
+            removed.append(f"hooks:{hook_file.relative_to(base_dir)}")
+
+    for mcp_file in (base_dir / ".mcp.json", base_dir / ".agents" / "mcp.json", base_dir / ".cursor" / "mcp.json"):
+        if _unregister_mcp_server(mcp_file):
+            removed.append(f"mcp:{mcp_file.relative_to(base_dir)}")
+
+    rule_needles = ("TokWiz Protocol (", ".agents/skills/tokwiz/SKILL.md")
+    for md_file in (
+        base_dir / "CLAUDE.md",
+        base_dir / "GEMINI.md",
+        base_dir / "AGENTS.md",
+        base_dir / ".cursorrules",
+        base_dir / ".github" / "copilot-instructions.md",
+    ):
+        if _remove_tokwiz_lines(md_file, rule_needles):
+            removed.append(f"rules:{md_file.relative_to(base_dir)}")
+
+    if not args.is_global:
+        if _remove_tokwiz_lines(target_root / ".gitignore", (".tokwiz/",)):
+            removed.append(".gitignore:.tokwiz/")
+        tokwiz_dir = target_root / ".tokwiz"
+        if not args.keep_data and tokwiz_dir.exists():
+            shutil.rmtree(tokwiz_dir, ignore_errors=True)
+            removed.append(".tokwiz/")
+
+    _cleanup_empty_dirs([
+        base_dir / ".claude" / "skills",
+        base_dir / ".claude",
+        base_dir / ".agents" / "skills",
+        base_dir / ".agents" / "rules",
+        base_dir / ".agents",
+        base_dir / ".cursor",
+        base_dir / ".github",
+    ])
+
+    if args.purge_runtime:
+        runtime_root = Path(os.environ.get("TOKWIZ_HOME") or (Path.home() / ".tokwiz" / "runtime")) / "tokwiz"
+        bin_path = Path(os.environ.get("TOKWIZ_BIN_DIR") or (Path.home() / ".local" / "bin")) / "tokwiz"
+        if runtime_root.exists():
+            shutil.rmtree(runtime_root, ignore_errors=True)
+            removed.append(str(runtime_root))
+        if bin_path.exists():
+            bin_path.unlink(missing_ok=True)
+            removed.append(str(bin_path))
+
+    if removed:
+        print(f"[TokWiz Uninstall] Cleanly removed from {base_dir}: {', '.join(removed)}")
+    else:
+        print(f"[TokWiz Uninstall] No TokWiz integrations found in {base_dir}.")
+    return 0
+
+
 def _current_version() -> str:
     try:
         init_py = _REPO_ROOT / "scripts" / "__init__.py"
@@ -492,7 +660,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             "  benchmark [--json]      Run paired A/B token savings & MAPE benchmark suite\n"
             "  level <1|2|3|auto>      Configure optimization level\n"
             "  budget --max-prompt-cost <usd>  Configure prompt cost threshold\n"
-            "  update [--check]        Update TokWiz runtime and refresh project hooks"
+            "  update [--check]        Update TokWiz runtime and refresh project hooks\n"
+            "  uninstall [--keep-data] Safely remove TokWiz from a project without harming user files"
         )
         return 0 if args_list else 1
 
@@ -561,6 +730,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _cmd_budget(rest)
     if cmd == "update":
         return _cmd_update(rest)
+    if cmd == "uninstall":
+        return _cmd_uninstall(rest)
 
     print(f"Unknown command: {cmd}", file=sys.stderr)
     return 1

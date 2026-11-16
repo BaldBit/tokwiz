@@ -119,6 +119,9 @@ tokwiz update --check
 
 # Update TokWiz runtime and refresh hooks/skills in the current project
 tokwiz update
+
+# Safely remove TokWiz from a project without touching your project files
+tokwiz uninstall
 ```
 
 ### 2. Wire into Your AI Agents (`tokwiz init`)

@@ -160,6 +160,42 @@ class TestHookContractsAndResilience(unittest.TestCase):
         self.assertEqual(len(lines), 1)
         self.assertEqual(json.loads(lines[0])["prompt"], "Refactor validate_token")
 
+    def test_tokwiz_uninstall_preserves_project_files(self) -> None:
+        custom_skill = self.root / ".claude" / "skills" / "custom" / "SKILL.md"
+        custom_skill.parent.mkdir(parents=True, exist_ok=True)
+        custom_skill.write_text("# Keep custom skill\n", encoding="utf-8")
+        (self.root / "AGENTS.md").write_text("# My Project Custom Rules\n", encoding="utf-8")
+        (self.root / "CLAUDE.md").write_text("# Existing Claude Instructions\n", encoding="utf-8")
+        (self.root / ".gitignore").write_text("node_modules/\n", encoding="utf-8")
+        (self.root / ".mcp.json").write_text(json.dumps({"mcpServers": {"custom": {"command": "echo"}}}), encoding="utf-8")
+        (self.root / ".claude" / "settings.json").write_text(
+            json.dumps({"hooks": {"Stop": [{"matcher": ".*", "hooks": [{"type": "command", "command": "echo custom-stop"}]}]}}),
+            encoding="utf-8",
+        )
+
+        self.assertEqual(cli_mod.main(["init", "--agent", "all", "--root", str(self.root)]), 0)
+        self.assertEqual(cli_mod.main(["uninstall", "--root", str(self.root)]), 0)
+
+        # TokWiz artifacts removed
+        self.assertFalse((self.root / ".tokwiz").exists())
+        self.assertFalse((self.root / ".claude" / "skills" / "tokwiz").exists())
+        self.assertFalse((self.root / ".agents" / "skills" / "tokwiz").exists())
+        self.assertFalse((self.root / ".agents" / "rules" / "tokwiz.md").exists())
+        self.assertFalse((self.root / "GEMINI.md").exists())
+        self.assertFalse((self.root / ".cursorrules").exists())
+
+        # User/project files preserved intact
+        self.assertTrue(custom_skill.exists())
+        self.assertEqual((self.root / "AGENTS.md").read_text(encoding="utf-8"), "# My Project Custom Rules\n")
+        self.assertEqual((self.root / "CLAUDE.md").read_text(encoding="utf-8"), "# Existing Claude Instructions\n")
+        self.assertEqual((self.root / ".gitignore").read_text(encoding="utf-8"), "node_modules/\n")
+        mcp_cfg = json.loads((self.root / ".mcp.json").read_text(encoding="utf-8"))
+        self.assertIn("custom", mcp_cfg["mcpServers"])
+        self.assertNotIn("tokwiz", mcp_cfg["mcpServers"])
+        claude_cfg = json.loads((self.root / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        self.assertIn("echo custom-stop", json.dumps(claude_cfg))
+        self.assertNotIn("post-turn-record.py", json.dumps(claude_cfg))
+
 
 if __name__ == "__main__":
     unittest.main()
