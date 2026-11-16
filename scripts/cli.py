@@ -184,7 +184,7 @@ def _cmd_init(argv: List[str]) -> int:
         _ensure_line_in_file(
             base_dir / "CLAUDE.md",
             "TokWiz Protocol (do NOT `cat SKILL.md` — rules are below): "
-            "1) Call `mcp__tokwiz__tokwiz_slice` / `mcp__tokwiz__tokwiz_trace` / `mcp__tokwiz__tokwiz_graph_query` BEFORE `grep`/`find`/`Read`; "
+            "1) Call `mcp__tokwiz__tokwiz_slice` (supports `symbols: [...]` batching) / `tokwiz_trace` / `tokwiz_graph_query` BEFORE `grep`/`find`/`Read`; "
             "2) Call `mcp__tokwiz__tokwiz_skeleton` before ranged reads on >150L files; "
             "3) Call `mcp__tokwiz__tokwiz_test` instead of full `unittest`/`pytest`; "
             "4) Skip lockfiles/`node_modules/`/`dist/`.",
