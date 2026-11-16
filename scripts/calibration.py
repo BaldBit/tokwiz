@@ -297,16 +297,20 @@ class CalibrationEngine:
             unopt_tok = int(forecast.get("unoptimized_tokens", max(f_total_tok * 2, eff_tok + 1000)))
             net_saved_tok = max(0, unopt_tok - (eff_tok + skill_overhead_tokens))
             net_saved_cost = round(max(0.0, unopt_cost - r_cost), 6)
-            receipts = [
-                {
-                    "type": "WORKFLOW_COMPRESSION",
-                    "target": "session_turn",
-                    "full_tokens": unopt_tok,
-                    "actual_tokens": eff_tok,
-                    "saved_tokens": net_saved_tok,
-                    "detail": f"Workflow context & tool output compression ({eff_tok:,} eff tok vs {unopt_tok:,} tok)",
-                }
-            ]
+            receipts = (
+                [
+                    {
+                        "type": "WORKFLOW_COMPRESSION",
+                        "target": "session_turn",
+                        "full_tokens": unopt_tok,
+                        "actual_tokens": eff_tok,
+                        "saved_tokens": net_saved_tok,
+                        "detail": f"Workflow context & tool output compression ({eff_tok:,} eff tok vs {unopt_tok:,} tok)",
+                    }
+                ]
+                if net_saved_tok > 0
+                else []
+            )
 
         token_delta = usage.total_tokens - f_total_tok
         cost_delta = round(r_cost - f_cost, 6)

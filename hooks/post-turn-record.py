@@ -590,7 +590,8 @@ def _parse_claude_transcript_turns(
             else:
                 prompt_text = ""
 
-            is_synthetic_skill = bool(obj.get("isMeta")) or prompt_text.startswith("Base directory for this skill:")
+            prompt_text = _clean_user_prompt(prompt_text)
+            is_synthetic_skill = bool(obj.get("isMeta"))
             if prompt_text and not prompt_text.startswith("<") and not is_synthetic_skill:
                 _flush_cur()
                 pending_tools.clear()
@@ -867,6 +868,26 @@ def _find_workspace_transcript_turns(
         if turns:
             return turns
     return []
+
+
+_IDE_WRAPPER_TAG_RE = re.compile(
+    r"<(?:ide_opened_file|ide_selection|system-reminder|local-command-caveat|"
+    r"command-name|command-message|command-args|local-command-stdout|"
+    r"CONTEXT_SUMMARY|user_information|ADDITIONAL_METADATA)\b[^>]*>.*?"
+    r"(?:</(?:ide_opened_file|ide_selection|system-reminder|local-command-caveat|"
+    r"command-name|command-message|command-args|local-command-stdout|"
+    r"CONTEXT_SUMMARY|user_information|ADDITIONAL_METADATA)>|$)",
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _clean_user_prompt(raw: str) -> str:
+    cleaned = _IDE_WRAPPER_TAG_RE.sub("", raw or "").strip()
+    if not cleaned:
+        return ""
+    if cleaned.startswith("[Request interrupted") or cleaned.startswith("Base directory for this skill:"):
+        return ""
+    return cleaned
 
 
 def _norm_prompt(text: str) -> str:

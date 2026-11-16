@@ -137,6 +137,29 @@ class TestHookContractsAndResilience(unittest.TestCase):
         self.assertTrue((self.root / ".cursorrules").exists())
         self.assertIn(".tokwiz/", (self.root / ".gitignore").read_text(encoding="utf-8"))
 
+    def test_ide_wrapper_tags_ignored_and_stripped(self) -> None:
+        # Pure IDE notification tag must NOT create a forecast
+        ide_only = {
+            "hook_event_name": "UserPromptSubmit",
+            "prompt": "<ide_opened_file>The user opened the file /tmp/CLAUDE.md in the IDE.</ide_opened_file>",
+            "cwd": str(self.root),
+        }
+        out_only, _ = self._run_hook("pre-prompt-predict.py", json.dumps(ide_only))
+        self.assertEqual(out_only.get("decision"), "allow")
+        self.assertFalse((self.root / ".tokwiz" / "forecasts.jsonl").exists())
+
+        # Mixed IDE tag + real user prompt must strip the tag and keep only the real prompt
+        mixed = {
+            "hook_event_name": "UserPromptSubmit",
+            "prompt": "<ide_opened_file>Opened CLAUDE.md</ide_opened_file>\nRefactor validate_token",
+            "cwd": str(self.root),
+        }
+        out_mixed, _ = self._run_hook("pre-prompt-predict.py", json.dumps(mixed))
+        self.assertEqual(out_mixed.get("decision"), "allow")
+        lines = (self.root / ".tokwiz" / "forecasts.jsonl").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 1)
+        self.assertEqual(json.loads(lines[0])["prompt"], "Refactor validate_token")
+
 
 if __name__ == "__main__":
     unittest.main()

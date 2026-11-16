@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import sys
 import time
 from dataclasses import asdict
@@ -33,18 +34,38 @@ def _load_estimator_module():
     return mod
 
 
+_IDE_WRAPPER_TAG_RE = re.compile(
+    r"<(?:ide_opened_file|ide_selection|system-reminder|local-command-caveat|"
+    r"command-name|command-message|command-args|local-command-stdout|"
+    r"CONTEXT_SUMMARY|user_information|ADDITIONAL_METADATA)\b[^>]*>.*?"
+    r"(?:</(?:ide_opened_file|ide_selection|system-reminder|local-command-caveat|"
+    r"command-name|command-message|command-args|local-command-stdout|"
+    r"CONTEXT_SUMMARY|user_information|ADDITIONAL_METADATA)>|$)",
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _clean_user_prompt(raw: str) -> str:
+    cleaned = _IDE_WRAPPER_TAG_RE.sub("", raw or "").strip()
+    if not cleaned:
+        return ""
+    if cleaned.startswith("[Request interrupted") or cleaned.startswith("Base directory for this skill:"):
+        return ""
+    return cleaned
+
+
 def _extract_prompt(payload: Dict[str, object]) -> str:
     for key in ("prompt", "user_prompt", "query", "message", "content", "input"):
         val = payload.get(key)
         if isinstance(val, str) and val.strip():
-            return val.strip()
+            return _clean_user_prompt(val)
     # Nested structures
     hook_input = payload.get("hook_input") or payload.get("request")
     if isinstance(hook_input, dict):
         for key in ("prompt", "user_prompt", "content", "query"):
             val = hook_input.get(key)
             if isinstance(val, str) and val.strip():
-                return val.strip()
+                return _clean_user_prompt(val)
     return ""
 
 
