@@ -974,6 +974,7 @@
       <thead>
         <tr>
           <th>Forecast ID <span class="info-tip" tabindex="0" data-tip="Unique ID linking a pre-prompt forecast to its actual post-turn billed usage.">ⓘ</span></th>
+          <th>Date &amp; Time</th>
           <th>Prompt</th>
           <th>Profile <span class="info-tip" tabindex="0" data-tip="Prompt complexity tier (A=Simple Q&A, B=Single-file edit, C=Multi-file refactor, D=Debug/test triage, E=Repo-wide).">ⓘ</span></th>
           <th>Source <span class="info-tip" tabindex="0" data-tip="Where the turn was captured from: TRANSCRIPT (auto-synced IDE log), HOOK (IDE hook), or CLI.">ⓘ</span></th>
@@ -2365,7 +2366,7 @@
 
       if (turns.length === 0 && pendingForecasts.length === 0) {
         const tr = document.createElement("tr");
-        tr.innerHTML = `<td colspan="12" class="empty-state">No prompts recorded yet in <code>.tokwiz/telemetry.db</code>. Send a prompt in your AI agent to see real-time telemetry and itemized receipts here.</td>`;
+        tr.innerHTML = `<td colspan="13" class="empty-state">No prompts recorded yet in <code>.tokwiz/telemetry.db</code>. Send a prompt in your AI agent to see real-time telemetry and itemized receipts here.</td>`;
         tbody.appendChild(tr);
         return;
       }
@@ -2381,9 +2382,19 @@
           ? `<button type="button" class="receipt-btn" data-drawer="${drawerId}">🔍 ${receipts.length} receipt${receipts.length > 1 ? "s" : ""}</button>`
           : "";
 
+        const fmtTs = (ts) => {
+          const n = Number(ts || 0);
+          if (!Number.isFinite(n) || n <= 1000000000) return "—";
+          return new Date(n * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+        };
+        const fullTs = (ts) => {
+          const n = Number(ts || 0);
+          return (Number.isFinite(n) && n > 1000000000) ? new Date(n * 1000).toLocaleString() : "";
+        };
         const escPrompt = String(t.prompt || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
         tr.innerHTML = `
           <td><code>${t.forecast_id}</code></td>
+          <td style="white-space:nowrap; color:var(--muted); font-size:0.76rem;" title="${fullTs(t.timestamp)}">${fmtTs(t.timestamp)}</td>
           <td><div class="prompt-cell" title="${escPrompt}">${escPrompt}</div></td>
           <td>P-${t.profile_code} (L${t.optimization_level})</td>
           <td><span class="source-badge ${src}" title="${t.transcript_path || "Direct provider usage telemetry"}">${src}</span></td>
@@ -2414,7 +2425,7 @@
               </div>
             </div>
           `).join("");
-          drawerTr.innerHTML = `<td colspan="12"><div class="receipt-list">${itemsHtml}</div></td>`;
+          drawerTr.innerHTML = `<td colspan="13"><div class="receipt-list">${itemsHtml}</div></td>`;
           tbody.appendChild(drawerTr);
 
           const btn = tr.querySelector(".receipt-btn");
@@ -2431,9 +2442,14 @@
         pendingForecasts.slice().reverse().forEach(f => {
           const tr = document.createElement("tr");
           const cCost = (f.costs && f.costs["claude-sonnet-4"]) ? f.costs["claude-sonnet-4"].cached_cost_usd : 0;
+          const fTsNum = Number(f.timestamp || 0);
+          const fDateStr = (Number.isFinite(fTsNum) && fTsNum > 1000000000)
+            ? new Date(fTsNum * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+            : "—";
           const escPending = String(f.prompt || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
           tr.innerHTML = `
             <td><code>${f.forecast_id}</code></td>
+            <td style="white-space:nowrap; color:var(--muted); font-size:0.76rem;">${fDateStr}</td>
             <td><div class="prompt-cell" title="${escPending}">${escPending}</div></td>
             <td>P-${f.profile_code} (L${f.optimization_level})</td>
             <td><span class="source-badge">PENDING</span></td>
