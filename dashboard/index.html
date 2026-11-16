@@ -416,7 +416,7 @@
     }
     .tag.ON_TARGET { background: var(--emerald-soft); color: var(--emerald); }
     .tag.PENDING_FORECAST { background: var(--violet-soft); color: var(--violet); }
-    .tag.EXTRA_TOOL_LOOPS, .tag.REASONING_SPIKE, .tag.CACHE_MISS_DRIFT, .tag.UNBOUNDED_TOOL_OUTPUT {
+    .tag.EXTRA_TOOL_LOOPS, .tag.REASONING_SPIKE, .tag.CACHE_MISS_DRIFT, .tag.UNBOUNDED_TOOL_OUTPUT, .tag.CONTEXT_GROWTH {
       background: var(--amber-soft);
       color: var(--amber);
     }
@@ -1154,6 +1154,11 @@
                 <td>Tool outputs (or cumulative multi-turn context reads) were much larger than the pre-prompt estimate.</td>
                 <td><code>real_tool_tokens &gt; 1.5&times; forecast_tool</code> (<code>+300</code> min) and <code>real_total &gt; 1.15&times;</code> forecast.</td>
               </tr>
+              <tr>
+                <td><span class="tag CONTEXT_GROWTH">CONTEXT_GROWTH</span></td>
+                <td>Session/system context size (conversation history, system prompt, MCP schemas) exceeded the initial forecast even without extra tool loops or cache misses.</td>
+                <td>No other variance tag fired, and <code>effective_total &gt; 1.25&times;</code> forecast.</td>
+              </tr>
             </tbody>
           </table>
 
@@ -1200,7 +1205,7 @@
             </div>
             <div class="glossary-entry">
               <strong>Variance Tags (Status)</strong>
-              Why Real cost differed from Forecast: <code>ON_TARGET</code>, <code>EXTRA_TOOL_LOOPS</code>, <code>CACHE_MISS_DRIFT</code>, <code>REASONING_SPIKE</code>, or <code>UNBOUNDED_TOOL_OUTPUT</code>.
+              Why Real cost differed from Forecast: <code>ON_TARGET</code>, <code>EXTRA_TOOL_LOOPS</code>, <code>CACHE_MISS_DRIFT</code>, <code>REASONING_SPIKE</code>, <code>UNBOUNDED_TOOL_OUTPUT</code>, or <code>CONTEXT_GROWTH</code>.
             </div>
             <div class="glossary-entry">
               <strong>Residual Error (ΔC $)</strong>
