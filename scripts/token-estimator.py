@@ -355,7 +355,10 @@ class TokenEstimator:
         )
         unopt_output = int(profile.base_output_tokens * 1.45)
         unopt_reasoning = int(reasoning_tokens * 1.7)
-        unoptimized_tokens = context_tokens + prompt_tok + unopt_loop_tokens + unopt_reasoning + unopt_output
+        unoptimized_tokens = max(
+            context_tokens + prompt_tok + unopt_loop_tokens + unopt_reasoning + unopt_output,
+            int(total_tokens * 1.35),
+        )
 
         savings_tokens = max(0, unoptimized_tokens - total_tokens)
         savings_pct = round((savings_tokens / max(1, unoptimized_tokens)) * 100.0, 1)

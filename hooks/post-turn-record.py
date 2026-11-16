@@ -1240,7 +1240,17 @@ def handle_post_turn(payload: Dict[str, object], default_root: Optional[Path] = 
     if any(k in payload for k in ("usage", "usageMetadata", "input_tokens", "prompt_tokens")):
         usage_payload = payload
     elif isinstance(payload.get("transcript_path"), str):
-        usage_payload = _extract_usage_from_transcript_file(Path(str(payload["transcript_path"])))
+        tp = Path(str(payload["transcript_path"]))
+        parsed_turns = _parse_claude_transcript_turns(tp, workspace_root)
+        if parsed_turns:
+            latest_t = parsed_turns[-1]
+            u_raw = latest_t.get("usage_payload")
+            if isinstance(u_raw, dict):
+                usage_payload = dict(u_raw)
+                usage_payload["receipts"] = latest_t.get("receipts", [])
+                usage_payload["transcript_path"] = str(tp)
+        if usage_payload is None:
+            usage_payload = _extract_usage_from_transcript_file(tp)
 
     if usage_payload is not None:
         forecast = _load_active_forecast(workspace_root, payload)
