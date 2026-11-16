@@ -250,13 +250,26 @@ class TelemetryStore:
                 t["receipts"] = []
 
         # Also read real pre-prompt forecasts (.tokwiz/forecasts.jsonl) and guardrail events
+        installed_at: Optional[float] = None
+        cfg_path = self.root_dir / ".tokwiz" / "config.json"
+        if cfg_path.exists():
+            try:
+                cfg_data = json.loads(cfg_path.read_text(encoding="utf-8"))
+                if cfg_data.get("installed_at") is not None:
+                    installed_at = float(cfg_data["installed_at"])
+            except Exception:
+                installed_at = None
+
         forecasts_list: List[Dict[str, object]] = []
         forecasts_path = self.root_dir / ".tokwiz" / "forecasts.jsonl"
         if forecasts_path.exists():
             for line in forecasts_path.read_text(encoding="utf-8", errors="replace").splitlines():
                 if line.strip():
                     try:
-                        forecasts_list.append(json.loads(line))
+                        f_obj = json.loads(line)
+                        if installed_at is not None and float(f_obj.get("timestamp", 0.0)) < installed_at:
+                            continue
+                        forecasts_list.append(f_obj)
                     except Exception:
                         pass
 

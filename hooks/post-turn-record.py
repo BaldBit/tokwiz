@@ -15,6 +15,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from dataclasses import asdict
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
@@ -958,7 +959,7 @@ def sync_workspace_transcript_turns(
             d = asdict(res)
             matched_forecast = {
                 "forecast_id": det_id,
-                "timestamp": float(turn_idx + 1),
+                "timestamp": time.time(),
                 "prompt": rt_prompt,
                 "profile_code": d["profile_code"],
                 "profile_name": d["profile_name"],
