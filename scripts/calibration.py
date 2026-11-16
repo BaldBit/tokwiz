@@ -247,6 +247,14 @@ class CalibrationEngine:
         # Look up forecasted cost for the active model
         costs_map = forecast.get("costs", {})
         model_cost_info = costs_map.get(usage.model_id) if isinstance(costs_map, dict) else None
+        if model_cost_info is None and isinstance(costs_map, dict):
+            low_m = usage.model_id.lower()
+            fallback_key = (
+                "o4-mini"
+                if any(k in low_m for k in ("gpt", "o4", "o3", "codex"))
+                else ("gemini-2.5-pro" if "gemini" in low_m else "claude-sonnet-4")
+            )
+            model_cost_info = costs_map.get(fallback_key)
         if isinstance(model_cost_info, dict):
             base_f_cost = float(model_cost_info.get("cached_cost_usd") or model_cost_info.get("uncached_cost_usd") or 0.0)
             unopt_cost = float(model_cost_info.get("unoptimized_cost_usd") or base_f_cost * 2.5)
