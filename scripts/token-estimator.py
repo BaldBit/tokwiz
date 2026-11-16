@@ -344,14 +344,14 @@ class TokenEstimator:
 
         total_tokens = context_tokens + prompt_tok + tool_loop_tokens + reasoning_tokens + output_tokens
 
-        # Unoptimized baseline grounded in full file reads + blind grep/test loops
-        unopt_steps = profile.unoptimized_steps + max(0, blast_files - 1) * 2
+        # Unoptimized baseline grounded in full file reads + blind grep/test loops (bounded)
+        unopt_steps = min(10, profile.unoptimized_steps + min(4, max(0, blast_files - 1)))
         per_step_unopt_out = max(
             profile.unoptimized_tool_out_tokens,
             actual_full_file_tokens // max(1, blast_files) if actual_full_file_tokens > 0 else profile.unoptimized_tool_out_tokens,
         )
         unopt_loop_tokens = unopt_steps * (
-            context_tokens + prompt_tok + 140 + min(2400, per_step_unopt_out) + (blast_files * 180)
+            context_tokens + prompt_tok + 140 + min(2400, per_step_unopt_out)
         )
         unopt_output = int(profile.base_output_tokens * 1.45)
         unopt_reasoning = int(reasoning_tokens * 1.7)

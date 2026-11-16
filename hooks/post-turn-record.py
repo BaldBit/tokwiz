@@ -287,18 +287,19 @@ def _compute_turn_receipts(
                     "detail": f"Full file {rel} ({total_lines} lines) was also read in this turn -> 0 tokens saved",
                 }
             )
-        elif full_tok > spent_tok:
-            saved_tok = full_tok - spent_tok
+        elif min(full_tok, 25000) > spent_tok:
+            capped_full_tok = min(full_tok, 25000)
+            saved_tok = capped_full_tok - spent_tok
             ranges_desc = ", ".join(f"L{s}-L{e}" for s, e, _ in rng_list) if rng_list else "skeleton only"
             prefix = "Skeleton + ranged read" if sk_tok > 0 and rng_list else ("AST Skeleton" if sk_tok > 0 else "Ranged read")
             receipts.append(
                 {
                     "type": "SKELETON_AND_RANGE" if sk_tok > 0 else "RANGED_READ",
                     "target": rel,
-                    "full_tokens": full_tok,
+                    "full_tokens": capped_full_tok,
                     "actual_tokens": spent_tok,
                     "saved_tokens": saved_tok,
-                    "detail": f"{prefix} ({ranges_desc}) on {rel}: spent {spent_tok:,} tok vs {full_tok:,} tok full {total_lines}-line file",
+                    "detail": f"{prefix} ({ranges_desc}) on {rel}: spent {spent_tok:,} tok vs {capped_full_tok:,} tok full {total_lines}-line file",
                 }
             )
 
@@ -319,7 +320,7 @@ def _compute_turn_receipts(
         candidate_unread = candidate_unread[:4]
         for c_rel in candidate_unread:
             credited_avoided.add(c_rel)
-        avoided_tok = sum(source_files[c_rel][1] for c_rel in candidate_unread)
+        avoided_tok = min(12000, sum(min(source_files[c_rel][1], 6000) for c_rel in candidate_unread))
         saved_tok = max(0, avoided_tok - gq_tok)
         if saved_tok > 0:
             receipts.append(
@@ -944,7 +945,13 @@ def sync_workspace_transcript_turns(
             if fid in used_forecast_ids:
                 continue
             f_norm = _norm_prompt(str(f.get("prompt", "")))
-            if f_norm and (f_norm[:45] in rt_prompt_norm or rt_prompt_norm[:45] in f_norm):
+            if f_norm and (
+                f_norm == rt_prompt_norm
+                or (
+                    (rt_prompt_norm.startswith(f_norm[:45]) or f_norm.startswith(rt_prompt_norm[:45]))
+                    and min(len(f_norm), len(rt_prompt_norm)) >= 0.75 * max(len(f_norm), len(rt_prompt_norm))
+                )
+            ):
                 matched_forecast = f
                 used_forecast_ids.add(fid)
                 break
