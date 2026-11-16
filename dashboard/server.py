@@ -14,7 +14,7 @@ import signal
 import subprocess
 import sys
 import webbrowser
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from pathlib import Path
 from typing import List, Optional
 from urllib.parse import parse_qs, urlparse
@@ -55,8 +55,9 @@ def _safe_resolve_root(root_arg: Path | str = ".") -> Path:
     return resolved
 
 
-class ReusableHTTPServer(HTTPServer):
+class ReusableHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True
+    daemon_threads = True
 
 _TEL_SPEC = importlib.util.spec_from_file_location("telemetry", _SCRIPTS_DIR / "telemetry.py")
 assert _TEL_SPEC and _TEL_SPEC.loader

@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import sys
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set
 
@@ -255,6 +256,19 @@ def _cmd_init(argv: List[str]) -> int:
         mcp_cmd = [sys.executable, str(_REPO_ROOT / "scripts" / "mcp-server.py"), "--root", str(base_dir)]
         _register_mcp_server(base_dir / ".cursor" / "mcp.json", mcp_cmd)
         configured.append("cursor")
+
+    # Record initialization timestamp so transcript sync only tracks post-init conversations
+    cfg_dir = base_dir / ".tokwiz"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg_file = cfg_dir / "config.json"
+    cfg: Dict[str, object] = {}
+    if cfg_file.exists():
+        try:
+            cfg = json.loads(cfg_file.read_text(encoding="utf-8"))
+        except Exception:
+            cfg = {}
+    cfg.setdefault("installed_at", time.time())
+    cfg_file.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
 
     print(
         f"[TokWiz Init] Configured agents ({', '.join(configured)}) in {base_dir} "

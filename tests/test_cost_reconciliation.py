@@ -278,6 +278,8 @@ class TestCostReconciliationAndCalibration(unittest.TestCase):
         for forbidden in ("demoBtn", "SAMPLE_DATA", "isDemoMode", "Preview Sample Session", "A/B Verified", "A/B vs Base", "Live Workspace", "Live Data"):
             self.assertNotIn(forbidden, html, f"Found forbidden stale UI string: {forbidden}")
         self.assertRegex(html, r'id="abProofSection"[^>]*style="[^"]*display:\s*none')
+        self.assertIn('id="loadingBanner"', html)
+        self.assertIn('class="prompt-cell"', html)
 
         # 2. Every graph-header and chart-header <h2> must include an ⓘ info-tip
         headers = re.findall(r'<div class="(?:graph|chart)-header">.*?<h2>(.*?)</h2>', html, flags=re.DOTALL)
@@ -348,6 +350,7 @@ const ctx = {
   window: { devicePixelRatio: 1, addEventListener() {} },
   fetch: async () => ({ json: async () => ({}) }),
   requestAnimationFrame: () => 0,
+  setTimeout: (fn) => 0,
 };
 ctx.window.Chart = FakeChart;
 vm.runInNewContext(process.argv[1], ctx);

@@ -512,6 +512,40 @@
       letter-spacing: 0;
     }
     .info-tip:hover, .info-tip:focus-visible { color: var(--accent); border-color: var(--accent); }
+    .loading-banner {
+      display: none;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+      padding: 10px 14px;
+      border-radius: 10px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      font-size: 0.80rem;
+      color: var(--muted);
+    }
+    .loading-track {
+      flex: 1;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--card-alt);
+      overflow: hidden;
+    }
+    .loading-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--accent), var(--emerald));
+      transition: width 0.25s ease;
+    }
+    .prompt-cell {
+      max-width: 380px;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      word-break: break-word;
+    }
     .global-info-tip {
       position: fixed;
       display: none;
@@ -751,6 +785,12 @@
       </button>
     </div>
   </header>
+
+  <div class="loading-banner" id="loadingBanner" role="status" aria-live="polite">
+    <span id="loadingText">Loading workspace telemetry &amp; symbol graph...</span>
+    <div class="loading-track"><div class="loading-fill" id="loadingBarFill"></div></div>
+    <span id="loadingPct" style="min-width:34px; text-align:right; font-variant-numeric:tabular-nums;">0%</span>
+  </div>
 
   <section class="kpi-grid" aria-label="Key Performance Indicators">
     <div class="kpi-card">
@@ -2341,9 +2381,10 @@
           ? `<button type="button" class="receipt-btn" data-drawer="${drawerId}">🔍 ${receipts.length} receipt${receipts.length > 1 ? "s" : ""}</button>`
           : "";
 
+        const escPrompt = String(t.prompt || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
         tr.innerHTML = `
           <td><code>${t.forecast_id}</code></td>
-          <td>${t.prompt}</td>
+          <td><div class="prompt-cell" title="${escPrompt}">${escPrompt}</div></td>
           <td>P-${t.profile_code} (L${t.optimization_level})</td>
           <td><span class="source-badge ${src}" title="${t.transcript_path || "Direct provider usage telemetry"}">${src}</span></td>
           <td>${Number(t.forecast_total_tokens).toLocaleString()}</td>
@@ -2390,9 +2431,10 @@
         pendingForecasts.slice().reverse().forEach(f => {
           const tr = document.createElement("tr");
           const cCost = (f.costs && f.costs["claude-sonnet-4"]) ? f.costs["claude-sonnet-4"].cached_cost_usd : 0;
+          const escPending = String(f.prompt || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
           tr.innerHTML = `
             <td><code>${f.forecast_id}</code></td>
-            <td>${f.prompt}</td>
+            <td><div class="prompt-cell" title="${escPending}">${escPending}</div></td>
             <td>P-${f.profile_code} (L${f.optimization_level})</td>
             <td><span class="source-badge">PENDING</span></td>
             <td>${Number(f.total_tokens).toLocaleString()}</td>
@@ -2409,23 +2451,55 @@
       }
     }
 
+    function setLoadingProgress(pct, text) {
+      const banner = document.getElementById("loadingBanner");
+      const fill = document.getElementById("loadingBarFill");
+      const lbl = document.getElementById("loadingText");
+      const pctEl = document.getElementById("loadingPct");
+      if (!banner || !fill) return;
+      banner.style.display = "flex";
+      fill.style.width = `${pct}%`;
+      if (lbl && text) lbl.textContent = text;
+      if (pctEl) pctEl.textContent = `${pct}%`;
+      if (pct >= 100) {
+        setTimeout(() => { banner.style.display = "none"; }, 350);
+      }
+    }
+
     async function loadLiveStats() {
       document.getElementById("liveBtn").classList.add("active");
-      try {
-        const [statsRes, graphRes] = await Promise.all([
-          fetch("/api/stats"),
-          fetch("/api/graph")
-        ]);
-        const statsData = await statsRes.json();
-        const graphData = await graphRes.json();
+      let statsDone = false;
+      let graphDone = false;
+      setLoadingProgress(15, "Loading workspace telemetry & symbol graph...");
 
-        renderDashboard(statsData);
-        if (graphData && graphData.nodes) {
-          init3DGraph(graphData);
-        }
-      } catch (_err) {
-        renderDashboard({ total_turns: 0, turns: [], forecasts: [] });
-      }
+      const statsPromise = fetch("/api/stats")
+        .then(r => r.json())
+        .then(statsData => {
+          statsDone = true;
+          renderDashboard(statsData);
+          setLoadingProgress(graphDone ? 100 : 60, graphDone ? "Ready" : "Telemetry loaded — building symbol graph...");
+        })
+        .catch(() => {
+          statsDone = true;
+          renderDashboard({ total_turns: 0, turns: [], forecasts: [] });
+          setLoadingProgress(graphDone ? 100 : 60);
+        });
+
+      const graphPromise = fetch("/api/graph")
+        .then(r => r.json())
+        .then(graphData => {
+          graphDone = true;
+          if (graphData && graphData.nodes) {
+            init3DGraph(graphData);
+          }
+          setLoadingProgress(statsDone ? 100 : 50, statsDone ? "Ready" : "Symbol graph loaded — syncing telemetry...");
+        })
+        .catch(() => {
+          graphDone = true;
+          setLoadingProgress(statsDone ? 100 : 50);
+        });
+
+      await Promise.all([statsPromise, graphPromise]);
     }
 
     let _lastStatsPayload = null;
