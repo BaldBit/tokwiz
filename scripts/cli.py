@@ -144,8 +144,8 @@ def _cmd_init(argv: List[str]) -> int:
     post_turn_cmd = f"python3 {_REPO_ROOT / 'hooks' / 'post-turn-record.py'}"
 
     rule_line = (
-        "Follow `.agents/skills/tokwiz/SKILL.md` for token optimization: query `tokwiz graph` "
-        "before grep/find, skeletonize files >300 lines, and never read lockfiles."
+        "If `.tokwiz/` or `.agents/skills/tokwiz/SKILL.md` exists, follow `.agents/skills/tokwiz/SKILL.md` "
+        "for token optimization: query `tokwiz graph` before grep/find, skeletonize files >150 lines, and never read lockfiles."
     )
 
     configured: List[str] = []
@@ -186,7 +186,7 @@ def _cmd_init(argv: List[str]) -> int:
         settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
         _ensure_line_in_file(
             base_dir / "CLAUDE.md",
-            "TokWiz Protocol (do NOT `cat SKILL.md` — rules are below): "
+            "TokWiz Protocol (if `mcp__tokwiz__*` or `.tokwiz/` is available; do NOT `cat SKILL.md`): "
             "1) Call `mcp__tokwiz__tokwiz_slice` (supports `symbols: [...]` batching) / `tokwiz_trace` / `tokwiz_graph_query` BEFORE `grep`/`find`/`Read`; "
             "2) Call `mcp__tokwiz__tokwiz_skeleton` before ranged reads on >150L files; "
             "3) Call `mcp__tokwiz__tokwiz_test` instead of full `unittest`/`pytest`; "
