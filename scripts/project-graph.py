@@ -984,6 +984,111 @@ class ProjectGraph:
             "expanded_added_count": expanded_added_count,
         }
 
+    def repo_map(
+        self,
+        max_tokens: int = 220,
+        auto_build: bool = True,
+    ) -> str:
+        """Generate a zero-LLM <220-token codebase architecture map from .tokwiz/graph.db."""
+        data = self.export_graph_data(max_nodes=120, auto_build=auto_build)
+        total_files = int(data.get("total_files", 0))
+        total_nodes = int(data.get("total_nodes", 0))
+        total_edges = int(data.get("total_edges", 0))
+        lang_counts: Dict[str, int] = dict(data.get("language_counts") or {})
+        top_hubs: List[Dict[str, object]] = list(data.get("top_hubs") or [])
+
+        with self._connect() as conn:
+            file_rows = conn.execute(
+                "SELECT file_path, language, line_count FROM files ORDER BY file_path"
+            ).fetchall()
+            sym_rows = conn.execute(
+                "SELECT file_path, name, kind, start_line, end_line FROM nodes WHERE kind != 'file'"
+            ).fetchall()
+
+        dir_files: Dict[str, List[str]] = {}
+        dir_syms: Dict[str, int] = {}
+        for fr in file_rows:
+            fp = str(fr["file_path"])
+            parts = Path(fp).parts
+            dkey = f"{parts[0]}/" if len(parts) > 1 else "./"
+            dir_files.setdefault(dkey, []).append(Path(fp).name)
+        for sr in sym_rows:
+            fp = str(sr["file_path"])
+            parts = Path(fp).parts
+            dkey = f"{parts[0]}/" if len(parts) > 1 else "./"
+            dir_syms[dkey] = dir_syms.get(dkey, 0) + 1
+
+        lang_str = ", ".join(
+            f"{k}:{v}" for k, v in sorted(lang_counts.items(), key=lambda kv: -kv[1])[:4]
+        ) or "none"
+        lines: List[str] = [
+            f"# [TokWiz Repo Architecture Map: {total_files} files, {total_nodes} nodes, {total_edges} edges | langs: {lang_str}]"
+        ]
+
+        def _try_add(line: str) -> bool:
+            cand = "\n".join(lines + [line])
+            if estimate_tokens(cand) <= max_tokens:
+                lines.append(line)
+                return True
+            return False
+
+        # 1. Subsystems by directory
+        if dir_files:
+            _try_add("## Subsystems")
+            ranked_dirs = sorted(
+                dir_files.keys(),
+                key=lambda d: (dir_syms.get(d, 0), len(dir_files[d])),
+                reverse=True,
+            )[:4]
+            for d in ranked_dirs:
+                fnames = ", ".join(dir_files[d][:3])
+                more = f" (+{len(dir_files[d]) - 3})" if len(dir_files[d]) > 3 else ""
+                _try_add(
+                    f"- {d} ({len(dir_files[d])} files, {dir_syms.get(d, 0)} syms): {fnames}{more}"
+                )
+
+        # 2. Entrypoints (prioritize core cli/server/main/app/index before demo/eval/test, 1 per file)
+        ep_candidates: List[Tuple[int, str, str]] = []
+        seen_eps: Set[str] = set()
+        for sr in sym_rows:
+            nm = str(sr["name"])
+            fp = str(sr["file_path"])
+            stem = Path(fp).stem
+            if nm.startswith("_"):
+                continue
+            if nm in ("main", "run_server", "cli", "app"):
+                ep_str = f"- {fp}:L{sr['start_line']}-L{sr['end_line']} ({nm})"
+                if ep_str not in seen_eps:
+                    seen_eps.add(ep_str)
+                    is_aux = any(fp.startswith(p) for p in ("demo/", "evaluations/", "tests/"))
+                    priority = (0 if not is_aux else 1, 0 if stem in ("cli", "main", "server", "app", "index") else 1)
+                    ep_candidates.append((priority[0] * 10 + priority[1], fp, ep_str))
+        if ep_candidates:
+            ep_candidates.sort(key=lambda item: (item[0], item[1], item[2]))
+            _try_add("## Entrypoints")
+            seen_ep_files: Set[str] = set()
+            for _, fp, ep in ep_candidates:
+                if fp in seen_ep_files:
+                    continue
+                if not _try_add(ep):
+                    break
+                seen_ep_files.add(fp)
+                if len(seen_ep_files) >= 3:
+                    break
+
+        # 3. Top PageRank Architectural Hubs
+        if top_hubs:
+            _try_add("## Top PageRank Hubs")
+            for h in top_hubs[:8]:
+                hub_line = (
+                    f"- {h['name']} [{h['kind']}] {h['file_path']}:L{h['start_line']}-L{h['end_line']} "
+                    f"(in:{h['in_degree']} out:{h['out_degree']})"
+                )
+                if not _try_add(hub_line):
+                    break
+
+        return "\n".join(lines)
+
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
@@ -1009,9 +1114,31 @@ def main(argv: Optional[List[str]] = None) -> int:
     p_slice.add_argument("--max-tokens", type=int, default=600, help="Maximum tokens in code slice (default: 600)")
     p_slice.add_argument("--json", action="store_true", help="Output JSON slice")
 
+    p_map = sub.add_parser("map", help="Generate <220-token zero-LLM codebase architecture map")
+    p_map.add_argument("--root", dest="map_root", default=None, help="Repository root directory")
+    p_map.add_argument("--max-tokens", type=int, default=220, help="Maximum tokens in repo map (default: 220)")
+    p_map.add_argument("--json", action="store_true", help="Output JSON repo map")
+
     args = parser.parse_args(argv)
-    effective_root = getattr(args, "slice_root", None) or args.root
+    effective_root = getattr(args, "slice_root", None) or getattr(args, "map_root", None) or args.root
     graph = ProjectGraph(root_dir=Path(effective_root))
+
+    if args.subcommand == "map":
+        rendered = graph.repo_map(max_tokens=args.max_tokens)
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "repo_map": rendered,
+                        "token_count": estimate_tokens(rendered),
+                        "max_tokens": args.max_tokens,
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            print(rendered)
+        return 0
 
     if args.subcommand == "build":
         stats = graph.build(force=args.force)

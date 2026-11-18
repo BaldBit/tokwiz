@@ -162,6 +162,17 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
             },
         },
     },
+    {
+        "name": "tokwiz_map",
+        "description": "Generate a zero-LLM <220-token codebase architecture map (subsystems, entrypoints, and top PageRank hubs) from .tokwiz/graph.db.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "max_tokens": {"type": "integer", "default": 220, "description": "Max token budget (default 220)"},
+                "root": {"type": "string", "default": ".", "description": "Workspace root directory"},
+            },
+        },
+    },
 ]
 
 
@@ -265,6 +276,11 @@ def _execute_tool(name: str, args: Dict[str, Any], default_root: Path) -> str:
             ws_root,
             max_tokens=int(args.get("max_tokens") or 200),
         )
+
+    if name == "tokwiz_map":
+        pg = _load_script("project_graph", "project-graph.py")
+        graph = pg.ProjectGraph(root_dir=ws_root)
+        return graph.repo_map(max_tokens=int(args.get("max_tokens") or 220))
 
     raise ValueError(f"Unknown tool: {name}")
 

@@ -731,7 +731,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             "  init [--agent all|...]  Configure TokWiz skills, hooks, and project graph\n"
             "  predict <prompt>        Forecast workflow tokens, blast radius, and $ cost\n"
             "  optimize <prompt>       Pin prompt with exact AST file:Lstart-Lend symbol coordinates\n"
-            "  graph <build|query>     Build or query the Tier 2 Tree-Sitter PageRank graph\n"
+            "  graph <build|query|map> Build or query the Tier 2 Tree-Sitter PageRank graph\n"
+            "  map [--max-tokens 220]  Generate <220-token zero-LLM codebase architecture map\n"
             "  slice <symbol>          One-shot AST definition + caller snippet bundler\n"
             "  skeleton <file>         Extract compact AST/data skeleton with line numbers\n"
             "  test [files...]         Run graph-impacted tests with 1-line pass receipt\n"
@@ -765,6 +766,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if cmd == "graph":
         mod = _load_script_module("project_graph", "project-graph.py")
         return int(mod.main(rest))
+    if cmd == "map":
+        mod = _load_script_module("project_graph", "project-graph.py")
+        return int(mod.main(["map", *rest]))
     if cmd == "slice":
         mod = _load_script_module("project_graph", "project-graph.py")
         return int(mod.main(["slice", *rest]))
