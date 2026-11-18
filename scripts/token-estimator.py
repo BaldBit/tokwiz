@@ -240,7 +240,8 @@ class TokenEstimator:
         }
         qa_starters = (
             "what ", "why ", "how ", "explain ", "describe ", "where is ",
-            "trace ", "show ", "list ", "which ",
+            "trace ", "show ", "list ", "which ", "map ", "inspect ",
+            "assume ", "recover ", "summarize ",
         )
         edit_terms = {"edit", "change", "modify", "patch", "function", "method", "typo"}
 

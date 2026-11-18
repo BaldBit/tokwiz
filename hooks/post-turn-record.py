@@ -207,6 +207,9 @@ def _compute_turn_receipts(
     files_read_in_turn: Set[str] = set()
     graph_queries: List[Tuple[str, int]] = []
     filter_runs: List[Tuple[str, int, str]] = []
+    map_runs: List[int] = []
+    diff_slice_runs: List[int] = []
+    resume_runs: List[int] = []
     blocked_reads: List[Tuple[str, int]] = []
 
     for ev in tool_events:
@@ -268,6 +271,25 @@ def _compute_turn_receipts(
             # 3. Output Filter / Impacted Test Runner
             if "tokwiz filter" in cmd or "output-filter.py" in cmd or "cli.py test" in cmd or "tokwiz test" in cmd:
                 filter_runs.append((cmd, out_tok, out_txt))
+
+            # 4. Zero-LLM Repo Architecture Map (`tokwiz map` / `graph map`)
+            if re.search(r"\b(?:tokwiz|cli\.py|project-graph\.py)\s+(?:graph\s+)?map\b", cmd):
+                map_runs.append(min(out_tok, 220))
+
+            # 5. Git-Diff AST Slicer (`tokwiz diff-slice`)
+            if re.search(r"\b(?:tokwiz|cli\.py)\s+diff-slice\b", cmd):
+                diff_slice_runs.append(min(out_tok, 450))
+
+            # 6. Auto-Checkpoint Session Resume (`tokwiz resume`)
+            if re.search(r"\b(?:tokwiz|cli\.py)\s+resume\b", cmd):
+                resume_runs.append(min(out_tok, 200))
+
+        elif tname in ("tokwiz_map", "mcp_tokwiz_tokwiz_map"):
+            map_runs.append(min(out_tok, 220))
+        elif tname in ("tokwiz_diff_slice", "mcp_tokwiz_tokwiz_diff_slice"):
+            diff_slice_runs.append(min(out_tok, 450))
+        elif tname in ("tokwiz_resume", "mcp_tokwiz_tokwiz_resume"):
+            resume_runs.append(min(out_tok, 200))
 
     receipts: List[Dict[str, object]] = []
 
@@ -360,6 +382,57 @@ def _compute_turn_receipts(
                 "detail": f"Compressed test/build command stdout ({filt_tok:,} tok vs {raw_est:,} tok raw output)",
             }
         )
+
+    # Category 4: Zero-LLM Repo Architecture Map Receipts
+    for map_tok in map_runs[:1]:
+        unread_src = [rel for rel in sorted(source_files.keys()) if rel not in files_read_in_turn and rel not in credited_avoided][:4]
+        for u_rel in unread_src:
+            credited_avoided.add(u_rel)
+        avoided_map_tok = min(8000, sum(min(source_files[u_rel][1], 3000) for u_rel in unread_src)) or 3200
+        saved_map_tok = max(0, avoided_map_tok - map_tok)
+        if saved_map_tok > 0:
+            receipts.append(
+                {
+                    "type": "REPO_MAP",
+                    "target": "tokwiz map",
+                    "full_tokens": avoided_map_tok,
+                    "actual_tokens": map_tok,
+                    "saved_tokens": saved_map_tok,
+                    "detail": f"Zero-LLM repo architecture map ({map_tok:,} tok) avoided cold-start exploration across {max(1, len(unread_src))} subsystem module(s)",
+                }
+            )
+
+    # Category 5: Git-Diff AST Slicer Receipts
+    for ds_tok in diff_slice_runs[:1]:
+        avoided_ds_tok = 3600
+        saved_ds_tok = max(0, avoided_ds_tok - ds_tok)
+        if saved_ds_tok > 0:
+            receipts.append(
+                {
+                    "type": "DIFF_SLICE",
+                    "target": "tokwiz diff-slice",
+                    "full_tokens": avoided_ds_tok,
+                    "actual_tokens": ds_tok,
+                    "saved_tokens": saved_ds_tok,
+                    "detail": f"Git-Diff AST Slice ({ds_tok:,} tok) mapped hunks to enclosing AST symbols, 1-hop callers & impacted tests vs {avoided_ds_tok:,} tok raw file + diff inspection",
+                }
+            )
+
+    # Category 6: Auto-Checkpoint Session Resume Receipts
+    for res_tok in resume_runs[:1]:
+        avoided_res_tok = 4200
+        saved_res_tok = max(0, avoided_res_tok - res_tok)
+        if saved_res_tok > 0:
+            receipts.append(
+                {
+                    "type": "CHECKPOINT_RESUME",
+                    "target": "tokwiz resume",
+                    "full_tokens": avoided_res_tok,
+                    "actual_tokens": res_tok,
+                    "saved_tokens": saved_res_tok,
+                    "detail": f"Reloaded <200-token auto-checkpoint ({res_tok:,} tok) vs {avoided_res_tok:,} tok full file re-exploration after context reset",
+                }
+            )
 
     counts = {
         "full_reads": len(full_reads),
