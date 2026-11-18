@@ -156,6 +156,20 @@ class TestCostReconciliationAndCalibration(unittest.TestCase):
             cal_mod.attribute_variance_causes({"total_tokens": 2000, "estimated_steps": 3, "tool_loop_tokens": 1200}, cached_usage),
             ["CONTEXT_GROWTH"],
         )
+        bloated_usage = cal_mod.ActualUsage(
+            model_id="m",
+            agent_host="claude",
+            input_tokens=260_000,
+            cached_input_tokens=200_000,
+            tool_output_tokens=100,
+            reasoning_tokens=100,
+            output_tokens=200,
+            real_steps=2,
+        )
+        self.assertIn(
+            "CONTEXT_BLOAT",
+            cal_mod.attribute_variance_causes({"total_tokens": 2000, "estimated_steps": 2, "tool_loop_tokens": 500}, bloated_usage),
+        )
 
     def test_pre_post_turn_reconciliation_and_telemetry_summary(self) -> None:
         # 1. Trigger PreInvocation hook to create .tokwiz/active-forecast.json

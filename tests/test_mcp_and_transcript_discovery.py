@@ -112,6 +112,14 @@ class TestMCPServerAndTranscriptDiscovery(unittest.TestCase):
         self.assertIn("Graph-Pinned Context", opt["result"]["content"][0]["text"])
         self.assertIn("validate_token", opt["result"]["content"][0]["text"])
 
+        res_cp = mcp_mod.handle_jsonrpc_message(
+            {"jsonrpc": "2.0", "id": 11, "method": "tools/call", "params": {"name": "tokwiz_resume", "arguments": {}}},
+            self.ws,
+        )
+        self.assertFalse(res_cp["result"]["isError"])
+        self.assertIn("# TokWiz Checkpoint", res_cp["result"]["content"][0]["text"])
+        self.assertTrue((self.ws / ".tokwiz" / "checkpoint.md").exists())
+
         # Verify `tokwiz init` registers MCP configs non-destructively
         (self.ws / ".mcp.json").write_text(json.dumps({"mcpServers": {"custom": {"command": "echo"}}}), encoding="utf-8")
         subprocess.run(

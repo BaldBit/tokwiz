@@ -197,6 +197,9 @@ def attribute_variance_causes(
     if usage.tool_output_tokens > f_tool * 1.5 and (usage.tool_output_tokens - f_tool) > 300 and effective_total > int(f_total * 1.15):
         tags.append("UNBOUNDED_TOOL_OUTPUT")
 
+    if (usage.input_tokens // max(1, usage.real_steps)) > 100_000:
+        tags.append("CONTEXT_BLOAT")
+
     if not tags and effective_total > int(f_total * 1.25):
         tags.append("CONTEXT_GROWTH")
 

@@ -736,6 +736,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             "  skeleton <file>         Extract compact AST/data skeleton with line numbers\n"
             "  test [files...]         Run graph-impacted tests with 1-line pass receipt\n"
             "  checkpoint              Generate <200-token working memory snapshot\n"
+            "  resume                  Reload live <200-token working memory checkpoint after /clear\n"
             "  mcp [--root DIR]        Start native stdio MCP server for IDE agents\n"
             "  filter [-- <cmd>]       Compress noisy test, build, and git shell outputs\n"
             "  stats [--session|--days N]  Display token savings & Forecast-vs-Real cost report\n"
@@ -776,6 +777,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if cmd == "checkpoint":
         mod = _load_script_module("workspace_ops", "workspace-ops.py")
         return int(mod.main_checkpoint(rest))
+    if cmd == "resume":
+        mod = _load_script_module("workspace_ops", "workspace-ops.py")
+        return int(mod.main_resume(rest))
     if cmd == "mcp":
         mod = _load_script_module("mcp_server", "mcp-server.py")
         return int(mod.main(rest))

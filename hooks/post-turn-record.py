@@ -1277,6 +1277,14 @@ def handle_post_turn(payload: Dict[str, object], default_root: Optional[Path] = 
             sys.modules["project_graph"] = graph_mod
             graph_spec.loader.exec_module(graph_mod)
             graph_mod.ProjectGraph(root_dir=workspace_root).build(force=False)
+        wops_spec = importlib.util.spec_from_file_location(
+            "workspace_ops", _SCRIPTS_DIR / "workspace-ops.py"
+        )
+        if wops_spec and wops_spec.loader:
+            wops_mod = importlib.util.module_from_spec(wops_spec)
+            sys.modules["workspace_ops"] = wops_mod
+            wops_spec.loader.exec_module(wops_mod)
+            wops_mod.generate_checkpoint(workspace_root)
     except Exception:
         pass
 

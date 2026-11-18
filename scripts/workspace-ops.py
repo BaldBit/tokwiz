@@ -238,11 +238,28 @@ def generate_checkpoint(
         except Exception:
             pass
 
+    recent_prompts: List[str] = []
+    tel_db = root_dir / ".tokwiz" / "telemetry.db"
+    if tel_db.exists():
+        try:
+            with contextlib.closing(sqlite3.connect(str(tel_db))) as conn:
+                rows_p = conn.execute(
+                    "SELECT prompt FROM turns ORDER BY timestamp DESC LIMIT 2"
+                ).fetchall()
+                for rp in reversed(rows_p):
+                    p_txt = re.sub(r"\s+", " ", str(rp[0] or "")).strip()
+                    if p_txt:
+                        recent_prompts.append(p_txt[:70])
+        except Exception:
+            pass
+
     lines = [
         f"# TokWiz Checkpoint ({branch})",
         f"- Changed ({len(changed)}): " + (", ".join(changed[:5]) if changed else "clean"),
         f"- Tests: {test_line}",
     ]
+    if recent_prompts:
+        lines.append("- Recent tasks: " + " | ".join(recent_prompts))
     if coords:
         lines.append("- Symbols:")
         lines.extend(coords)
@@ -265,6 +282,27 @@ def generate_checkpoint(
     except Exception:
         pass
     return snapshot
+
+
+def resume_checkpoint(root_dir: Path, max_tokens: int = 200) -> str:
+    """Return the latest working-memory checkpoint (refreshing if missing or older than 60s)."""
+    cp_path = root_dir / ".tokwiz" / "checkpoint.md"
+    if cp_path.exists():
+        try:
+            if (time.time() - cp_path.stat().st_mtime) < 60.0:
+                return cp_path.read_text(encoding="utf-8").strip()
+        except Exception:
+            pass
+    return generate_checkpoint(root_dir, out_path=cp_path, max_tokens=max_tokens)
+
+
+def main_resume(argv: Optional[List[str]] = None) -> int:
+    parser = argparse.ArgumentParser(prog="tokwiz resume", description="Reload <200-token working memory checkpoint after /clear.")
+    parser.add_argument("--root", default=".", help="Repository root directory")
+    parser.add_argument("--max-tokens", type=int, default=200, help="Maximum tokens (default: 200)")
+    args = parser.parse_args(argv)
+    print(resume_checkpoint(Path(args.root).resolve(), max_tokens=args.max_tokens))
+    return 0
 
 
 def main_test(argv: Optional[List[str]] = None) -> int:

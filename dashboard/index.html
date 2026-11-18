@@ -416,7 +416,7 @@
     }
     .tag.ON_TARGET { background: var(--emerald-soft); color: var(--emerald); }
     .tag.PENDING_FORECAST { background: var(--violet-soft); color: var(--violet); }
-    .tag.EXTRA_TOOL_LOOPS, .tag.REASONING_SPIKE, .tag.CACHE_MISS_DRIFT, .tag.UNBOUNDED_TOOL_OUTPUT, .tag.CONTEXT_GROWTH {
+    .tag.EXTRA_TOOL_LOOPS, .tag.REASONING_SPIKE, .tag.CACHE_MISS_DRIFT, .tag.UNBOUNDED_TOOL_OUTPUT, .tag.CONTEXT_GROWTH, .tag.CONTEXT_BLOAT {
       background: var(--amber-soft);
       color: var(--amber);
     }
@@ -1168,6 +1168,11 @@
                 <td><span class="tag CONTEXT_GROWTH">CONTEXT_GROWTH</span></td>
                 <td>Session/system context size (conversation history, system prompt, MCP schemas) exceeded the initial forecast even without extra tool loops or cache misses.</td>
                 <td>No other variance tag fired, and <code>effective_total &gt; 1.25&times;</code> forecast.</td>
+              </tr>
+              <tr>
+                <td><span class="tag CONTEXT_BLOAT">CONTEXT_BLOAT</span></td>
+                <td>Per-step session input exceeded 100k tokens (context rot). Run <code>/clear</code> and call <code>tokwiz_resume</code> to reload your &lt;200-token checkpoint.</td>
+                <td><code>input_tokens / real_steps &gt; 100,000</code>.</td>
               </tr>
             </tbody>
           </table>
