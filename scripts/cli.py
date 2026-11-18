@@ -99,6 +99,50 @@ def _parse_agents(agent_arg: str) -> Set[str]:
     return tokens & supported
 
 
+def _workspaces_registry_path() -> Path:
+    env_p = os.environ.get("TOKWIZ_WORKSPACES_FILE")
+    if env_p:
+        return Path(env_p)
+    return Path.home() / ".tokwiz" / "workspaces.json"
+
+
+def _is_temp_test_path(p: Path) -> bool:
+    if os.environ.get("TOKWIZ_WORKSPACES_FILE"):
+        return False
+    s = str(p)
+    return s.startswith(("/tmp/", "/private/tmp/", "/var/folders/", "/private/var/folders/"))
+
+
+def _register_workspace_in_registry(ws_path: Path) -> None:
+    if _is_temp_test_path(ws_path):
+        return
+    reg_file = _workspaces_registry_path()
+    try:
+        reg_file.parent.mkdir(parents=True, exist_ok=True)
+        items: List[Dict[str, object]] = []
+        if reg_file.exists():
+            raw = json.loads(reg_file.read_text(encoding="utf-8"))
+            if isinstance(raw, list):
+                items = [x for x in raw if isinstance(x, dict) and str(x.get("path")) != str(ws_path)]
+        items.insert(0, {"name": ws_path.name, "path": str(ws_path), "updated_at": time.time()})
+        reg_file.write_text(json.dumps(items[:30], indent=2) + "\n", encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _unregister_workspace_from_registry(ws_path: Path) -> None:
+    reg_file = _workspaces_registry_path()
+    if not reg_file.exists():
+        return
+    try:
+        raw = json.loads(reg_file.read_text(encoding="utf-8"))
+        if isinstance(raw, list):
+            kept = [x for x in raw if isinstance(x, dict) and str(x.get("path")) != str(ws_path)]
+            reg_file.write_text(json.dumps(kept, indent=2) + "\n", encoding="utf-8")
+    except Exception:
+        pass
+
+
 def _cmd_init(argv: List[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="tokwiz init",
@@ -115,6 +159,7 @@ def _cmd_init(argv: List[str]) -> int:
         action="store_true",
         help="Install into user home directory (~/.claude, ~/.agents)",
     )
+    parser.add_argument("--portable", action="store_true", help="Emit git-committable portable `tokwiz` commands without absolute paths")
     parser.add_argument("--root", default=".", help="Target repository root directory")
     parser.add_argument("--home", default=None, help="Override home directory for --global")
     args = parser.parse_args(argv)
@@ -139,9 +184,16 @@ def _cmd_init(argv: List[str]) -> int:
         graph_stats = {"total_nodes": 0, "total_edges": 0}
 
     skill_src = _REPO_ROOT / "SKILL.md"
-    pre_prompt_cmd = f"python3 {_REPO_ROOT / 'hooks' / 'pre-prompt-predict.py'}"
-    pre_tool_cmd = f"python3 {_REPO_ROOT / 'hooks' / 'pre-tool-guard.py'}"
-    post_turn_cmd = f"python3 {_REPO_ROOT / 'hooks' / 'post-turn-record.py'}"
+    if args.portable:
+        pre_prompt_cmd = "tokwiz hook pre-prompt-predict.py"
+        pre_tool_cmd = "tokwiz hook pre-tool-guard.py"
+        post_turn_cmd = "tokwiz hook post-turn-record.py"
+        mcp_base_cmd = ["tokwiz", "mcp", "--root", "."]
+    else:
+        pre_prompt_cmd = f"python3 {_REPO_ROOT / 'hooks' / 'pre-prompt-predict.py'}"
+        pre_tool_cmd = f"python3 {_REPO_ROOT / 'hooks' / 'pre-tool-guard.py'}"
+        post_turn_cmd = f"python3 {_REPO_ROOT / 'hooks' / 'post-turn-record.py'}"
+        mcp_base_cmd = [sys.executable, str(_REPO_ROOT / "scripts" / "mcp-server.py"), "--root", str(base_dir)]
 
     rule_line = (
         "If `.tokwiz/` or `.agents/skills/tokwiz/SKILL.md` exists, follow `.agents/skills/tokwiz/SKILL.md` "
@@ -192,8 +244,7 @@ def _cmd_init(argv: List[str]) -> int:
             "3) Call `mcp__tokwiz__tokwiz_test` instead of full `unittest`/`pytest`; "
             "4) Skip lockfiles/`node_modules/`/`dist/`.",
         )
-        mcp_cmd = [sys.executable, str(_REPO_ROOT / "scripts" / "mcp-server.py"), "--root", str(base_dir)]
-        _register_mcp_server(base_dir / ".mcp.json", mcp_cmd)
+        _register_mcp_server(base_dir / ".mcp.json", mcp_base_cmd)
         configured.append("claude")
 
     # 3. Gemini CLI / Antigravity setup
@@ -236,8 +287,7 @@ def _cmd_init(argv: List[str]) -> int:
             )
         hooks_json_path.write_text(json.dumps(hooks_payload, indent=2) + "\n", encoding="utf-8")
         _ensure_line_in_file(base_dir / "GEMINI.md", rule_line)
-        mcp_cmd = [sys.executable, str(_REPO_ROOT / "scripts" / "mcp-server.py"), "--root", str(base_dir)]
-        _register_mcp_server(base_dir / ".agents" / "mcp.json", mcp_cmd)
+        _register_mcp_server(base_dir / ".agents" / "mcp.json", mcp_base_cmd)
         configured.append("gemini")
 
     # 4. OpenAI Codex CLI setup
@@ -255,9 +305,11 @@ def _cmd_init(argv: List[str]) -> int:
         shutil.copyfile(skill_src, cursor_skill)
         _ensure_line_in_file(base_dir / ".cursorrules", rule_line)
         _ensure_line_in_file(base_dir / ".github" / "copilot-instructions.md", rule_line)
-        mcp_cmd = [sys.executable, str(_REPO_ROOT / "scripts" / "mcp-server.py"), "--root", str(base_dir)]
-        _register_mcp_server(base_dir / ".cursor" / "mcp.json", mcp_cmd)
+        _register_mcp_server(base_dir / ".cursor" / "mcp.json", mcp_base_cmd)
         configured.append("cursor")
+
+    if not args.is_global:
+        _register_workspace_in_registry(target_root)
 
     # Record initialization timestamp so transcript sync only tracks post-init conversations
     cfg_dir = base_dir / ".tokwiz"
@@ -419,6 +471,7 @@ def _cmd_uninstall(argv: List[str]) -> int:
         if not args.keep_data and tokwiz_dir.exists():
             shutil.rmtree(tokwiz_dir, ignore_errors=True)
             removed.append(".tokwiz/")
+        _unregister_workspace_from_registry(target_root)
 
     _cleanup_empty_dirs([
         base_dir / ".claude" / "skills",
@@ -445,6 +498,37 @@ def _cmd_uninstall(argv: List[str]) -> int:
     else:
         print(f"[TokWiz Uninstall] No TokWiz integrations found in {base_dir}.")
     return 0
+
+
+def _cmd_hook(argv: List[str]) -> int:
+    if not argv:
+        print(json.dumps({"decision": "allow"}))
+        return 0
+    hook_arg = argv[0].strip()
+    mapping = {
+        "pre-prompt": "pre-prompt-predict.py",
+        "pre-prompt-predict": "pre-prompt-predict.py",
+        "pre-prompt-predict.py": "pre-prompt-predict.py",
+        "pre-tool": "pre-tool-guard.py",
+        "pre-tool-guard": "pre-tool-guard.py",
+        "pre-tool-guard.py": "pre-tool-guard.py",
+        "post-turn": "post-turn-record.py",
+        "post-turn-record": "post-turn-record.py",
+        "post-turn-record.py": "post-turn-record.py",
+    }
+    script_name = mapping.get(hook_arg)
+    if not script_name:
+        print(json.dumps({"decision": "allow"}))
+        return 0
+    hook_path = _REPO_ROOT / "hooks" / script_name
+    spec = importlib.util.spec_from_file_location("tokwiz_hook_exec", hook_path)
+    if not spec or not spec.loader:
+        print(json.dumps({"decision": "allow"}))
+        return 0
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["tokwiz_hook_exec"] = mod
+    spec.loader.exec_module(mod)
+    return int(mod.main())
 
 
 def _current_version() -> str:
@@ -646,6 +730,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             "Commands:\n"
             "  init [--agent all|...]  Configure TokWiz skills, hooks, and project graph\n"
             "  predict <prompt>        Forecast workflow tokens, blast radius, and $ cost\n"
+            "  optimize <prompt>       Pin prompt with exact AST file:Lstart-Lend symbol coordinates\n"
             "  graph <build|query>     Build or query the Tier 2 Tree-Sitter PageRank graph\n"
             "  slice <symbol>          One-shot AST definition + caller snippet bundler\n"
             "  skeleton <file>         Extract compact AST/data skeleton with line numbers\n"
@@ -671,6 +756,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     if cmd == "predict":
         mod = _load_script_module("token_estimator", "token-estimator.py")
         return int(mod.main(rest))
+    if cmd == "optimize":
+        mod = _load_script_module("workspace_ops", "workspace-ops.py")
+        return int(mod.main_optimize(rest))
+    if cmd == "hook":
+        return _cmd_hook(rest)
     if cmd == "graph":
         mod = _load_script_module("project_graph", "project-graph.py")
         return int(mod.main(rest))

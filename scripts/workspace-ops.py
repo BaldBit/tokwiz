@@ -282,6 +282,47 @@ def main_test(argv: Optional[List[str]] = None) -> int:
     )
 
 
+def optimize_prompt(root_dir: Path, prompt: str, max_tokens: int = 250) -> str:
+    """Rewrite a prompt into a graph-pinned prompt with exact `file:Lstart-Lend` coordinates."""
+    pg_mod = _load_module("project_graph", "project-graph.py")
+    graph = pg_mod.ProjectGraph(root_dir=root_dir)
+    if not (root_dir / ".tokwiz" / "graph.db").exists():
+        graph.build(force=False)
+    res = graph.query(prompt, max_tokens=max_tokens)
+    coords: List[str] = []
+    for sym in res.matched_symbols[:6]:
+        fp = sym.get("file_path")
+        sl = sym.get("start_line")
+        el = sym.get("end_line")
+        name = sym.get("name")
+        kind = sym.get("kind")
+        coords.append(f"- `{name}` ({kind}): `{fp}:L{sl}-L{el}`")
+    tests = _discover_impacted_tests(root_dir, list(res.impacted_files)[:8])
+    lines = [
+        f"Task: {prompt.strip()}",
+        "",
+        "Graph-Pinned Context (skip repo-wide grep/glob; read only these exact ranges):",
+    ]
+    if coords:
+        lines.extend(coords)
+    else:
+        lines.append("- No direct symbol match in `.tokwiz/graph.db`; use `tokwiz_graph_query` first.")
+    if tests:
+        lines.append(f"- Impacted tests to verify via `tokwiz_test`: {', '.join(f'`{t}`' for t in tests[:4])}")
+    return "\n".join(lines)
+
+
+def main_optimize(argv: Optional[List[str]] = None) -> int:
+    parser = argparse.ArgumentParser(prog="tokwiz optimize", description="Pin prompt with exact AST symbol coordinates.")
+    parser.add_argument("prompt", nargs="+", help="Prompt text to optimize")
+    parser.add_argument("--root", default=".", help="Repository root directory")
+    parser.add_argument("--max-tokens", type=int, default=250, help="Max graph query budget (default: 250)")
+    args = parser.parse_args(argv)
+    full_prompt = " ".join(args.prompt)
+    print(optimize_prompt(Path(args.root).resolve(), full_prompt, max_tokens=args.max_tokens))
+    return 0
+
+
 def main_checkpoint(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="tokwiz checkpoint", description="Generate <200-token working memory snapshot.")
     parser.add_argument("--root", default=".", help="Repository root directory")
