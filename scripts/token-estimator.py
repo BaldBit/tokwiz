@@ -240,14 +240,17 @@ class TokenEstimator:
         }
         qa_starters = (
             "what ", "why ", "how ", "explain ", "describe ", "where is ",
-            "trace ", "show ", "list ", "which ",
+            "trace ", "show ", "list ", "which ", "map ", "inspect ",
+            "assume ", "recover ", "summarize ",
         )
         edit_terms = {"edit", "change", "modify", "patch", "function", "method", "typo"}
 
         impacted_count = len(graph_slice.impacted_files)
 
+        p_clean = re.sub(r"^(?:task\s*\d+\s*(?:\([^)]*\))?\s*[:.-]\s*)", "", p_low)
+
         # Profile A: Direct Q&A / Trace / Explanation (checked first when no write/edit/debug/audit verbs exist)
-        if (p_low.startswith(qa_starters) or p_low.endswith("?")) and not (
+        if (p_clean.startswith(qa_starters) or p_clean.endswith("?")) and not (
             word_set & (refactor_terms | edit_terms | debug_terms | {"audit", "migrate"})
         ):
             return PROFILES["A"]

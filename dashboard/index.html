@@ -169,6 +169,22 @@
     }
     .kpi-value { font-size: 1.5rem; font-weight: 700; margin: 6px 0 3px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
     .kpi-sub { font-size: 0.77rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .context-gauge-track {
+      width: 100%;
+      height: 5px;
+      background: var(--card-alt);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      overflow: hidden;
+      margin: 5px 0 4px;
+    }
+    .context-gauge-fill {
+      height: 100%;
+      width: 8%;
+      background: var(--emerald);
+      border-radius: 999px;
+      transition: width 0.25s ease, background 0.25s ease;
+    }
 
     /* Project Graph Visualizer Section */
     .graph-section {
@@ -416,7 +432,7 @@
     }
     .tag.ON_TARGET { background: var(--emerald-soft); color: var(--emerald); }
     .tag.PENDING_FORECAST { background: var(--violet-soft); color: var(--violet); }
-    .tag.EXTRA_TOOL_LOOPS, .tag.REASONING_SPIKE, .tag.CACHE_MISS_DRIFT, .tag.UNBOUNDED_TOOL_OUTPUT, .tag.CONTEXT_GROWTH {
+    .tag.EXTRA_TOOL_LOOPS, .tag.REASONING_SPIKE, .tag.CACHE_MISS_DRIFT, .tag.UNBOUNDED_TOOL_OUTPUT, .tag.CONTEXT_GROWTH, .tag.CONTEXT_BLOAT {
       background: var(--amber-soft);
       color: var(--amber);
     }
@@ -843,6 +859,15 @@
       <div class="kpi-value" id="kpiGraphNodes" style="color: var(--violet);">0 nodes</div>
       <div class="kpi-sub" id="kpiGraphSub">0 files · 0 edges (SQLite AST index)</div>
     </div>
+    <div class="kpi-card">
+      <div class="kpi-top">
+        <div class="kpi-label">Session Context Health <span class="info-tip" tabindex="0" data-tip="Measures active context load per step (Input Tokens ÷ Steps on latest turn). Healthy: <40k/step. Warm: 40k–100k/step. Bloated: >100k/step — run /clear then call tokwiz_resume to restore working state in <200 tokens.">ⓘ</span></div>
+        <span class="kpi-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>
+      </div>
+      <div class="kpi-value" id="kpiContextHealth" style="color: var(--emerald);">Healthy</div>
+      <div class="context-gauge-track" aria-hidden="true"><div class="context-gauge-fill" id="kpiContextBarFill"></div></div>
+      <div class="kpi-sub" id="kpiContextSub">Healthy (&lt;40k/step) · Auto-checkpoint ready</div>
+    </div>
   </section>
 
   <!-- Interactive Project Graph Visualizer -->
@@ -1035,10 +1060,11 @@
           <h3>1. How TokWiz Saves Tokens (Plain English)</h3>
           <p>AI coding agents normally waste <strong>5x–20x</strong> more tokens than needed because they wander through repositories with repeated searches, dump huge files into chat history, and re-read unchanged files. TokWiz stops that waste at the tool layer—without ever stripping code correctness or security details:</p>
           <ul>
-            <li><strong>Map First, Don't Wander (<code>tokwiz graph</code> &amp; <code>slice</code>):</strong> Instead of running 6–10 <code>grep</code>/<code>find</code> commands, TokWiz queries a local map of every function and its callers (<code>.tokwiz/graph.db</code>) and returns only the exact lines needed.</li>
+            <li><strong>Map First, Don't Wander (<code>tokwiz map</code>, <code>graph</code> &amp; <code>slice</code>):</strong> Instead of running 6–10 <code>grep</code>/<code>find</code> commands, TokWiz generates a &lt;220-token repo architecture map or queries <code>.tokwiz/graph.db</code> for the exact lines and callers needed.</li>
             <li><strong>Table of Contents Before Full Files (<code>tokwiz skeleton</code>):</strong> If the AI tries to read a large code file (&gt;300 lines) or config/data file (&gt;150 lines of JSON/YAML/TOML/SQL), TokWiz blocks the full dump and returns a compact outline with exact line numbers.</li>
+            <li><strong>Diff-Aware Context &amp; Tests (<code>tokwiz diff-slice</code> &amp; <code>tokwiz test</code>):</strong> Maps modified <code>git diff</code> hunks directly to enclosing AST functions, 1-hop callers, and impacted tests in &lt;500 tokens.</li>
             <li><strong>No Duplicate Reads (SHA-1 Read Cache):</strong> If the AI tries to re-read an unchanged file range already in context, TokWiz intercepts it with a 15-token <code>[TokWiz Cache Hit]</code> reminder.</li>
-            <li><strong>Skip Junk &amp; Noise (<code>output-filter</code> &amp; <code>tokwiz test</code>):</strong> Blocks lockfiles (<code>package-lock.json</code>, <code>Cargo.lock</code>) and <code>node_modules/</code>, strips test pass spam, and runs only tests affected by your <code>git diff</code>.</li>
+            <li><strong>Auto-Checkpoints &amp; Context-Rot Recovery (<code>tokwiz resume</code>):</strong> Automatically updates <code>.tokwiz/checkpoint.md</code> (&lt;200 tokens) after every turn so you can run <code>/clear</code> when context bloats (&gt;100k tok/step) and restore state instantly.</li>
             <li><strong>Receipt-Backed Accounting:</strong> Every saved token shown on this dashboard is backed by a concrete tool receipt. If the AI reads a full file anyway, <strong>0 tokens</strong> are credited.</li>
           </ul>
         </section>
@@ -1113,13 +1139,16 @@
               <tr><th>Command</th><th>What It Does</th></tr>
             </thead>
             <tbody>
-              <tr><td><code>tokwiz init --agent all</code></td><td>Configures skills, hooks, and MCP servers for Claude, Codex, Gemini &amp; Cursor.</td></tr>
-              <tr><td><code>tokwiz slice &lt;symbol&gt;</code></td><td>Returns exact AST body + caller call-site snippets in one call.</td></tr>
-              <tr><td><code>tokwiz skeleton &lt;file&gt;</code></td><td>Extracts a compact AST or JSON/YAML/TOML/SQL schema outline.</td></tr>
-              <tr><td><code>tokwiz test</code></td><td>Runs only tests impacted by your current <code>git diff</code> with a 1-line receipt.</td></tr>
-              <tr><td><code>tokwiz checkpoint</code></td><td>Writes a &lt;200-token snapshot to <code>.tokwiz/checkpoint.md</code> before <code>/compact</code>.</td></tr>
-              <tr><td><code>tokwiz verify-ab</code></td><td>Compares real Baseline vs. TokWiz session transcripts (<code>.jsonl</code>).</td></tr>
-              <tr><td><code>tokwiz live-ab --agent claude</code></td><td>Runs an automated head-to-head benchmark in isolated workspaces.</td></tr>
+              <tr><td><code>tokwiz init --agent all [--portable]</code></td><td>Configures skills, hooks, and MCP servers for Claude, Codex, Gemini &amp; Cursor (use <code>--portable</code> for team git repos).</td></tr>
+              <tr><td><code>tokwiz map</code> / MCP <code>tokwiz_map</code></td><td>Generates a &lt;220-token zero-LLM codebase architecture map (subsystems, entrypoints, PageRank hubs).</td></tr>
+              <tr><td><code>tokwiz slice &lt;symbol&gt;</code> / MCP <code>tokwiz_slice</code></td><td>Returns exact AST body + caller call-site snippets in one call.</td></tr>
+              <tr><td><code>tokwiz diff-slice [ref]</code> / MCP <code>tokwiz_diff_slice</code></td><td>Maps <code>git diff</code> hunks to enclosing AST symbols, 1-hop callers, and impacted tests (&lt;500 tokens).</td></tr>
+              <tr><td><code>tokwiz optimize "&lt;prompt&gt;"</code> / MCP <code>tokwiz_optimize</code></td><td>Rewrites a prompt with exact <code>file:Lstart-Lend</code> AST symbol coordinates and impacted tests.</td></tr>
+              <tr><td><code>tokwiz skeleton &lt;file&gt;</code> / MCP <code>tokwiz_skeleton</code></td><td>Extracts a compact AST or JSON/YAML/TOML/SQL schema outline.</td></tr>
+              <tr><td><code>tokwiz test</code> / MCP <code>tokwiz_test</code></td><td>Runs only tests impacted by your current <code>git diff</code> with a 1-line receipt.</td></tr>
+              <tr><td><code>tokwiz checkpoint</code> &amp; <code>tokwiz resume</code></td><td>Saves or reloads the auto-updated &lt;200-token checkpoint (<code>.tokwiz/checkpoint.md</code>) after <code>/clear</code> or <code>/compact</code>.</td></tr>
+              <tr><td><code>tokwiz verify-ab</code> / <code>tokwiz live-ab</code></td><td>Compares real Baseline vs. TokWiz session transcripts or runs automated headless A/B benchmarks.</td></tr>
+              <tr><td><code>tokwiz update</code> / <code>tokwiz uninstall</code></td><td>Updates TokWiz from the latest release or cleanly removes TokWiz hooks/configs from a project.</td></tr>
             </tbody>
           </table>
         </section>
@@ -1169,6 +1198,11 @@
                 <td>Session/system context size (conversation history, system prompt, MCP schemas) exceeded the initial forecast even without extra tool loops or cache misses.</td>
                 <td>No other variance tag fired, and <code>effective_total &gt; 1.25&times;</code> forecast.</td>
               </tr>
+              <tr>
+                <td><span class="tag CONTEXT_BLOAT">CONTEXT_BLOAT</span></td>
+                <td>Per-step session input exceeded 100k tokens (context rot). Run <code>/clear</code> and call <code>tokwiz_resume</code> to reload your &lt;200-token checkpoint.</td>
+                <td><code>input_tokens / real_steps &gt; 100,000</code>.</td>
+              </tr>
             </tbody>
           </table>
 
@@ -1215,7 +1249,11 @@
             </div>
             <div class="glossary-entry">
               <strong>Variance Tags (Status)</strong>
-              Why Real cost differed from Forecast: <code>ON_TARGET</code>, <code>EXTRA_TOOL_LOOPS</code>, <code>CACHE_MISS_DRIFT</code>, <code>REASONING_SPIKE</code>, <code>UNBOUNDED_TOOL_OUTPUT</code>, or <code>CONTEXT_GROWTH</code>.
+              Why Real cost differed from Forecast: <code>ON_TARGET</code>, <code>EXTRA_TOOL_LOOPS</code>, <code>CACHE_MISS_DRIFT</code>, <code>REASONING_SPIKE</code>, <code>UNBOUNDED_TOOL_OUTPUT</code>, <code>CONTEXT_GROWTH</code>, or <code>CONTEXT_BLOAT</code>.
+            </div>
+            <div class="glossary-entry">
+              <strong>Session Context Health Gauge</strong>
+              Tracks input tokens per step on the latest turn: <strong>Healthy</strong> (&lt;40k/step), <strong>Warm</strong> (40k–100k/step), or <strong>Bloated</strong> (&gt;100k/step — run <code>/clear</code> + <code>tokwiz_resume</code>).
             </div>
             <div class="glossary-entry">
               <strong>Residual Error (ΔC $)</strong>
@@ -2351,6 +2389,34 @@
         : forecastsCount > 0
           ? `Est. reduction across ${forecastsCount} forecast(s)`
           : "0 turns recorded in telemetry.db";
+
+      const ch = data.context_health || {};
+      const tokPerStep = Number(ch.tokens_per_step || 0);
+      const chStatus = String(ch.status || (tokPerStep > 100000 ? "BLOATED" : tokPerStep >= 40000 ? "WARM" : "HEALTHY"));
+      const ctxValEl = document.getElementById("kpiContextHealth");
+      const ctxSubEl = document.getElementById("kpiContextSub");
+      const ctxBarEl = document.getElementById("kpiContextBarFill");
+      if (ctxValEl && ctxSubEl && ctxBarEl) {
+        const kStr = tokPerStep > 0 ? ` · ${(tokPerStep / 1000).toFixed(1)}k/step` : "";
+        const pct = tokPerStep > 0 ? Math.max(6, Math.min(100, Math.round((tokPerStep / 120000) * 100))) : 8;
+        ctxBarEl.style.width = `${pct}%`;
+        if (chStatus === "BLOATED") {
+          ctxValEl.textContent = `Bloated${kStr}`;
+          ctxValEl.style.color = "var(--rose)";
+          ctxBarEl.style.background = "var(--rose)";
+          ctxSubEl.textContent = ch.recommendation || "Bloated (>100k/step) — Run /clear + tokwiz_resume";
+        } else if (chStatus === "WARM") {
+          ctxValEl.textContent = `Warm${kStr}`;
+          ctxValEl.style.color = "var(--amber)";
+          ctxBarEl.style.background = "var(--amber)";
+          ctxSubEl.textContent = ch.recommendation || "Warm (40k–100k/step) — Consider /clear + tokwiz_resume soon";
+        } else {
+          ctxValEl.textContent = `Healthy${kStr}`;
+          ctxValEl.style.color = "var(--emerald)";
+          ctxBarEl.style.background = "var(--emerald)";
+          ctxSubEl.textContent = ch.recommendation || "Healthy (<40k/step) · Auto-checkpoint ready";
+        }
+      }
 
       // Combine reconciled turns + any pending unreconciled forecasts so batch `tokwiz predict`
       // forecasts remain visible alongside completed turns in the charts.

@@ -286,6 +286,14 @@ class TestProjectGraphAndSkeletonizer(unittest.TestCase):
         self.assertEqual(expanded["expanded_node_id"], file_node["id"])
         self.assertGreaterEqual(len(expanded["nodes"]), len(base["nodes"]))
 
+        # Verify zero-LLM repo architecture map stays <= 220 tokens and includes hubs + subsystems
+        rmap = graph.repo_map(max_tokens=220, auto_build=False)
+        self.assertIn("[TokWiz Repo Architecture Map:", rmap)
+        self.assertIn("## Subsystems", rmap)
+        self.assertIn("## Top PageRank Hubs", rmap)
+        self.assertIn("validateToken", rmap)
+        self.assertLessEqual(skel_mod.estimate_tokens(rmap), 220)
+
 
 if __name__ == "__main__":
     unittest.main()

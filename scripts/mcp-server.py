@@ -151,6 +151,40 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
             "required": ["prompt"],
         },
     },
+    {
+        "name": "tokwiz_resume",
+        "description": "Reload the live <200-token working-memory checkpoint (.tokwiz/checkpoint.md) after /clear or /compact.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "max_tokens": {"type": "integer", "default": 200, "description": "Max token budget (default 200)"},
+                "root": {"type": "string", "default": ".", "description": "Workspace root directory"},
+            },
+        },
+    },
+    {
+        "name": "tokwiz_map",
+        "description": "Generate a zero-LLM <220-token codebase architecture map (subsystems, entrypoints, and top PageRank hubs) from .tokwiz/graph.db.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "max_tokens": {"type": "integer", "default": 220, "description": "Max token budget (default 220)"},
+                "root": {"type": "string", "default": ".", "description": "Workspace root directory"},
+            },
+        },
+    },
+    {
+        "name": "tokwiz_diff_slice",
+        "description": "Map git diff hunks to enclosing AST symbols, 1-hop callers, and impacted tests in <500 tokens.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "ref": {"type": "string", "description": "Optional git ref or range (e.g., HEAD~1)"},
+                "max_tokens": {"type": "integer", "default": 500, "description": "Max token budget (default 500)"},
+                "root": {"type": "string", "default": ".", "description": "Workspace root directory"},
+            },
+        },
+    },
 ]
 
 
@@ -246,6 +280,27 @@ def _execute_tool(name: str, args: Dict[str, Any], default_root: Path) -> str:
             ws_root,
             str(args.get("prompt") or ""),
             max_tokens=int(args.get("max_tokens") or 250),
+        )
+
+    if name == "tokwiz_resume":
+        wops = _load_script("workspace_ops", "workspace-ops.py")
+        return wops.resume_checkpoint(
+            ws_root,
+            max_tokens=int(args.get("max_tokens") or 200),
+        )
+
+    if name == "tokwiz_map":
+        pg = _load_script("project_graph", "project-graph.py")
+        graph = pg.ProjectGraph(root_dir=ws_root)
+        return graph.repo_map(max_tokens=int(args.get("max_tokens") or 220))
+
+    if name == "tokwiz_diff_slice":
+        wops = _load_script("workspace_ops", "workspace-ops.py")
+        raw_ref = str(args.get("ref") or "").strip() or None
+        return wops.diff_slice(
+            ws_root,
+            ref=raw_ref,
+            max_tokens=int(args.get("max_tokens") or 500),
         )
 
     raise ValueError(f"Unknown tool: {name}")

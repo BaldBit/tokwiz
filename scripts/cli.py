@@ -731,11 +731,14 @@ def main(argv: Optional[List[str]] = None) -> int:
             "  init [--agent all|...]  Configure TokWiz skills, hooks, and project graph\n"
             "  predict <prompt>        Forecast workflow tokens, blast radius, and $ cost\n"
             "  optimize <prompt>       Pin prompt with exact AST file:Lstart-Lend symbol coordinates\n"
-            "  graph <build|query>     Build or query the Tier 2 Tree-Sitter PageRank graph\n"
+            "  graph <build|query|map> Build or query the Tier 2 Tree-Sitter PageRank graph\n"
+            "  map [--max-tokens 220]  Generate <220-token zero-LLM codebase architecture map\n"
             "  slice <symbol>          One-shot AST definition + caller snippet bundler\n"
+            "  diff-slice [ref]        Map git diff hunks to AST symbols, callers, and impacted tests\n"
             "  skeleton <file>         Extract compact AST/data skeleton with line numbers\n"
             "  test [files...]         Run graph-impacted tests with 1-line pass receipt\n"
             "  checkpoint              Generate <200-token working memory snapshot\n"
+            "  resume                  Reload live <200-token working memory checkpoint after /clear\n"
             "  mcp [--root DIR]        Start native stdio MCP server for IDE agents\n"
             "  filter [-- <cmd>]       Compress noisy test, build, and git shell outputs\n"
             "  stats [--session|--days N]  Display token savings & Forecast-vs-Real cost report\n"
@@ -764,9 +767,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     if cmd == "graph":
         mod = _load_script_module("project_graph", "project-graph.py")
         return int(mod.main(rest))
+    if cmd == "map":
+        mod = _load_script_module("project_graph", "project-graph.py")
+        return int(mod.main(["map", *rest]))
     if cmd == "slice":
         mod = _load_script_module("project_graph", "project-graph.py")
         return int(mod.main(["slice", *rest]))
+    if cmd == "diff-slice":
+        mod = _load_script_module("workspace_ops", "workspace-ops.py")
+        return int(mod.main_diff_slice(rest))
     if cmd == "skeleton":
         mod = _load_script_module("code_skeletonizer", "code-skeletonizer.py")
         return int(mod.main(rest))
@@ -776,6 +785,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if cmd == "checkpoint":
         mod = _load_script_module("workspace_ops", "workspace-ops.py")
         return int(mod.main_checkpoint(rest))
+    if cmd == "resume":
+        mod = _load_script_module("workspace_ops", "workspace-ops.py")
+        return int(mod.main_resume(rest))
     if cmd == "mcp":
         mod = _load_script_module("mcp_server", "mcp-server.py")
         return int(mod.main(rest))

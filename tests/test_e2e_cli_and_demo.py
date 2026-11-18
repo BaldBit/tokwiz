@@ -434,6 +434,25 @@ class TestEndToEndCLIAndResilience(unittest.TestCase):
             self.assertIn("PASS (1/1", c_proc.stdout)
             self.assertTrue((ws / ".tokwiz" / "checkpoint.md").exists())
             self.assertLess(len(c_proc.stdout.split()), 200)
+
+            # Initialize git, commit, modify `greet` in app.py, and verify `tokwiz diff-slice`
+            subprocess.run(["git", "init"], cwd=str(ws), capture_output=True, check=True)
+            subprocess.run(["git", "config", "user.email", "t@t.com"], cwd=str(ws), capture_output=True, check=True)
+            subprocess.run(["git", "config", "user.name", "t"], cwd=str(ws), capture_output=True, check=True)
+            subprocess.run(["git", "add", "app.py", "tests/test_app.py"], cwd=str(ws), capture_output=True, check=True)
+            subprocess.run(["git", "commit", "-m", "init"], cwd=str(ws), capture_output=True, check=True)
+            (ws / "app.py").write_text("def greet(name: str) -> str:\n    return f'hello {name}!'\n", encoding="utf-8")
+
+            ds_proc = subprocess.run(
+                [sys.executable, str(SCRIPTS_DIR / "cli.py"), "diff-slice", "--root", str(ws)],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("[TokWiz Git-Diff AST Slice:", ds_proc.stdout)
+            self.assertIn("greet [function] app.py:L1-L2", ds_proc.stdout)
+            self.assertIn("test_greet", ds_proc.stdout)
+            self.assertIn("tests/test_app.py", ds_proc.stdout)
         finally:
             shutil.rmtree(ws, ignore_errors=True)
 
