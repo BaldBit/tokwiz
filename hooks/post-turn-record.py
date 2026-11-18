@@ -216,7 +216,7 @@ def _compute_turn_receipts(
         out_txt = str(ev.get("output_text", ""))
 
         if tname == "read_file":
-            p_raw = str(args.get("Path", ""))
+            p_raw = str(args.get("Path", "")).strip().strip('"').strip("'")
             if p_raw.startswith(ws_str + "/"):
                 rel = p_raw[len(ws_str) + 1 :].replace("\\", "/")
             else:
@@ -224,8 +224,14 @@ def _compute_turn_receipts(
             if rel.startswith(".") or "/." in rel:
                 continue
             files_read_in_turn.add(rel)
-            s_line = args.get("StartLine")
-            e_line = args.get("EndLine")
+            s_raw = args.get("StartLine")
+            e_raw = args.get("EndLine")
+            s_line = str(s_raw).strip().strip('"').strip("'") if s_raw is not None else None
+            e_line = str(e_raw).strip().strip('"').strip("'") if e_raw is not None else None
+            if s_line == "":
+                s_line = None
+            if e_line == "":
+                e_line = None
             total_lines = source_files.get(rel, (100, 400, ""))[0]
             if s_line is None and e_line is None:
                 full_reads.add(rel)
@@ -241,26 +247,26 @@ def _compute_turn_receipts(
                     ranged_reads.setdefault(rel, []).append((sl, actual_el, est_slice_tok))
 
         elif tname == "run_command":
-            cmd = str(args.get("CommandLine", ""))
-            # 1. Project Graph query
-            m_gq = re.search(r"(?:tokwiz\s+graph|project-graph\.py).*?\bquery\s+([^\s\"']+)", cmd)
-            if m_gq:
+            cmd = str(args.get("CommandLine", "")).strip().strip('"')
+            # 1. Project Graph query / slice / map
+            for m_gq in re.finditer(r"(?:(?:tokwiz|cli\.py)\s+graph|project-graph\.py).*?\b(?:query|slice)\s+([^\s\"'&;]+)", cmd):
                 sym = m_gq.group(1).strip()
                 graph_queries.append((sym, min(out_tok, 240)))
 
-            # 2. AST Code Skeletonizer
-            m_sk = re.search(r"(?:tokwiz\s+skeleton|code-skeletonizer\.py)\s+([^\s\"']+)", cmd)
-            if m_sk:
+            # 2. AST Code Skeletonizer (support multiple batched skeleton calls in one command)
+            sk_matches = list(re.finditer(r"(?:(?:tokwiz|cli\.py)\s+skeleton|code-skeletonizer\.py)\s+([^\s\"'&;]+)", cmd))
+            for m_sk in sk_matches:
                 raw_target = m_sk.group(1).strip()
                 if raw_target.startswith(ws_str + "/"):
                     rel_sk = raw_target[len(ws_str) + 1 :].replace("\\", "/")
                 else:
                     rel_sk = raw_target.lstrip("./").replace("\\", "/")
                 files_read_in_turn.add(rel_sk)
-                skeleton_runs.setdefault(rel_sk, []).append(min(out_tok, 260))
+                per_sk_tok = min(max(20, out_tok // max(1, len(sk_matches))), 260)
+                skeleton_runs.setdefault(rel_sk, []).append(per_sk_tok)
 
-            # 3. Output Filter
-            if "tokwiz filter" in cmd or "output-filter.py" in cmd:
+            # 3. Output Filter / Impacted Test Runner
+            if "tokwiz filter" in cmd or "output-filter.py" in cmd or "cli.py test" in cmd or "tokwiz test" in cmd:
                 filter_runs.append((cmd, out_tok, out_txt))
 
     receipts: List[Dict[str, object]] = []
@@ -394,12 +400,15 @@ def _parse_antigravity_transcript_turns(transcript_path: Path, target_workspace:
             if isinstance(tc, dict):
                 args = tc.get("arguments") or tc.get("args") or {}
                 if isinstance(args, dict):
-                    p_val = str(args.get("Path", ""))
+                    p_val = str(args.get("Path", "")).strip().strip('"').strip("'")
                     if p_val:
                         if p_val.startswith(ws_str + "/"):
                             target_path_hits += 1
                         else:
                             other_path_hits += 1
+                    cmd_val = str(args.get("CommandLine", "")).strip().strip('"')
+                    if cmd_val and ws_str in cmd_val:
+                        target_path_hits += 1
 
     if target_path_hits == 0 or target_path_hits < other_path_hits:
         return []
@@ -412,12 +421,27 @@ def _parse_antigravity_transcript_turns(transcript_path: Path, target_workspace:
 
     for idx_step, s in enumerate(steps):
         stype = s.get("type")
-        if stype == "USER_INPUT":
+        is_subagent_prompt = False
+        subagent_prompt_text = ""
+        if stype == "SYSTEM_MESSAGE":
+            raw_sys = str(s.get("content", ""))
+            m_sys = re.search(r"priority=MESSAGE_PRIORITY_HIGH\s+content=(.*?)</SYSTEM_MESSAGE>", raw_sys, re.S)
+            if m_sys:
+                cand_sys = m_sys.group(1).strip()
+                if not cand_sys.startswith('Task id "'):
+                    is_subagent_prompt = True
+                    subagent_prompt_text = re.split(r"\n\s*IMPORTANT WORKSPACE RULES", cand_sys, maxsplit=1)[0].strip()
+
+        if stype == "USER_INPUT" or is_subagent_prompt:
             if cur is not None and int(cur.get("steps", 0)) > 0:
                 completed_turns.append(cur)
-            raw_c = str(s.get("content", ""))
-            m = re.search(r"<USER_REQUEST>(.*?)</USER_REQUEST>", raw_c, re.S)
-            prompt = _clean_user_prompt(m.group(1).strip() if m else raw_c.strip())
+            if is_subagent_prompt:
+                raw_c = subagent_prompt_text
+                prompt = _clean_user_prompt(subagent_prompt_text)
+            else:
+                raw_c = str(s.get("content", ""))
+                m = re.search(r"<USER_REQUEST>(.*?)</USER_REQUEST>", raw_c, re.S)
+                prompt = _clean_user_prompt(m.group(1).strip() if m else raw_c.strip())
             if not prompt:
                 cur = None
                 continue
@@ -443,22 +467,29 @@ def _parse_antigravity_transcript_turns(transcript_path: Path, target_workspace:
                 cur["reasoning_tok"] = int(cur["reasoning_tok"]) + math.ceil(len(thinking) / 4)
                 cur["output_tok"] = int(cur["output_tok"]) + math.ceil((len(content) + len(json.dumps(tcalls))) / 4)
                 pending_tcalls = [tc for tc in tcalls if isinstance(tc, dict)]
-                last_step_was_final_response = len(tcalls) == 0 and bool(content.strip())
-            else:
+                has_send_msg = any(
+                    isinstance(tc, dict) and str(tc.get("name") or tc.get("tool_name") or "") == "send_message"
+                    for tc in tcalls
+                )
+                last_step_was_final_response = (len(tcalls) == 0 and bool(content.strip())) or has_send_msg
+            elif stype != "SYSTEM_MESSAGE":
                 out_tok = math.ceil(len(content) / 4)
-                cur["tool_tok"] = int(cur["tool_tok"]) + out_tok
                 if pending_tcalls:
                     tc_head = pending_tcalls.pop(0)
                     tname = str(tc_head.get("name") or tc_head.get("tool_name") or "")
                     targs = tc_head.get("arguments") or tc_head.get("args") or {}
-                    cur["tool_events"].append(  # type: ignore[union-attr]
-                        {
-                            "name": tname,
-                            "args": targs if isinstance(targs, dict) else {},
-                            "output_tokens": out_tok,
-                            "output_text": content,
-                        }
-                    )
+                    if tname != "send_message":
+                        cur["tool_tok"] = int(cur["tool_tok"]) + out_tok
+                        cur["tool_events"].append(  # type: ignore[union-attr]
+                            {
+                                "name": tname,
+                                "args": targs if isinstance(targs, dict) else {},
+                                "output_tokens": out_tok,
+                                "output_text": content,
+                            }
+                        )
+                else:
+                    cur["tool_tok"] = int(cur["tool_tok"]) + out_tok
                 last_step_was_final_response = False
 
     if cur is not None and int(cur.get("steps", 0)) > 0 and last_step_was_final_response:
@@ -775,6 +806,10 @@ def _parse_codex_transcript_turns(
 
 def _get_installed_at(workspace_root: Path) -> Optional[float]:
     cfg_path = workspace_root / ".tokwiz" / "config.json"
+    if not cfg_path.exists() and workspace_root.name == "project-baseline":
+        sibling_cfg = workspace_root.parent / "project-tokwiz" / ".tokwiz" / "config.json"
+        if sibling_cfg.exists():
+            cfg_path = sibling_cfg
     if not cfg_path.exists():
         return None
     try:
@@ -838,18 +873,14 @@ def _find_workspace_transcript_turns(
     env_claude = os.environ.get("TOKWIZ_CLAUDE_PROJECTS_DIR")
     c_root = Path(env_claude) if env_claude else (Path.home() / ".claude" / "projects")
     slug_dir = c_root / _claude_project_slug(workspace_root)
+    claude_files: List[Path] = []
     if slug_dir.exists() and slug_dir.is_dir():
         claude_files = [
             p for p in sorted(slug_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime)
             if installed_at is None or p.stat().st_mtime >= installed_at
         ]
-        if claude_files:
-            agg_turns: List[Dict[str, object]] = []
-            for jf in claude_files[-10:]:
-                agg_turns.extend(_parse_claude_transcript_turns(jf, workspace_root))
-            agg_turns = _filter_post_init_turns(agg_turns, installed_at)
-            if agg_turns:
-                return agg_turns
+        for jf in claude_files[-10:]:
+            candidates.append(("claude", jf))
 
     # 3. Codex CLI transcripts (~/.codex/sessions/**/*.jsonl)
     env_codex = os.environ.get("TOKWIZ_CODEX_DIR")
@@ -861,16 +892,39 @@ def _find_workspace_transcript_turns(
             candidates.append(("codex", jf))
 
     candidates.sort(key=lambda item: item[1].stat().st_mtime, reverse=True)
-    for kind, tf in candidates[:20]:
+    for kind, tf in candidates[:25]:
         if kind == "antigravity":
             turns = _parse_antigravity_transcript_turns(tf, workspace_root)
+            turns = _filter_post_init_turns(turns, installed_at)
+            if turns:
+                ag_files = [
+                    item[1]
+                    for item in sorted(
+                        [c for c in candidates[:25] if c[0] == "antigravity"],
+                        key=lambda x: x[1].stat().st_mtime,
+                    )
+                ]
+                agg_ag: List[Dict[str, object]] = []
+                for af in ag_files:
+                    t_list = _filter_post_init_turns(
+                        _parse_antigravity_transcript_turns(af, workspace_root),
+                        installed_at,
+                    )
+                    if t_list:
+                        agg_ag.extend(t_list)
+                return agg_ag or turns
         elif kind == "claude":
-            turns = _parse_claude_transcript_turns(tf, workspace_root)
+            agg_turns: List[Dict[str, object]] = []
+            for jf in claude_files[-10:]:
+                agg_turns.extend(_parse_claude_transcript_turns(jf, workspace_root))
+            agg_turns = _filter_post_init_turns(agg_turns, installed_at)
+            if agg_turns:
+                return agg_turns
         else:
             turns = _parse_codex_transcript_turns(tf, workspace_root)
-        turns = _filter_post_init_turns(turns, installed_at)
-        if turns:
-            return turns
+            turns = _filter_post_init_turns(turns, installed_at)
+            if turns:
+                return turns
     return []
 
 
