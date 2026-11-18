@@ -348,6 +348,11 @@ class TelemetryStore:
                 "forecasts": forecasts_list[-limit:],
                 "guardrail_events": guardrail_list[-limit:],
                 "ab_comparison": ab_comparison,
+                "context_health": {
+                    "status": "HEALTHY",
+                    "tokens_per_step": 0,
+                    "recommendation": "Healthy (<40k/step) · Auto-checkpoint ready",
+                },
             }
 
         tot_f_tok = sum(int(t["forecast_total_tokens"]) for t in turns)
@@ -408,6 +413,18 @@ class TelemetryStore:
             "output": sum(int(t["real_output_tokens"]) for t in turns),
         }
 
+        last_turn = turns[-1]
+        latest_tok_per_step = int(last_turn["real_input_tokens"]) // max(1, int(last_turn["real_steps"]))
+        if latest_tok_per_step > 100_000:
+            ctx_status = "BLOATED"
+            ctx_rec = "Bloated (>100k/step) — Run /clear + tokwiz_resume"
+        elif latest_tok_per_step >= 40_000:
+            ctx_status = "WARM"
+            ctx_rec = "Warm (40k–100k/step) — Consider /clear + tokwiz_resume soon"
+        else:
+            ctx_status = "HEALTHY"
+            ctx_rec = "Healthy (<40k/step) · Auto-checkpoint ready"
+
         return {
             "total_turns": total_turns,
             "total_forecasts": len(forecasts_list),
@@ -435,6 +452,11 @@ class TelemetryStore:
             "forecasts": forecasts_list[-limit:],
             "guardrail_events": guardrail_list[-limit:],
             "ab_comparison": ab_comparison,
+            "context_health": {
+                "status": ctx_status,
+                "tokens_per_step": latest_tok_per_step,
+                "recommendation": ctx_rec,
+            },
         }
 
 

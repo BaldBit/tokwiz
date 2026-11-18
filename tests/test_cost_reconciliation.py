@@ -206,6 +206,8 @@ class TestCostReconciliationAndCalibration(unittest.TestCase):
         self.assertEqual(summary["total_turns"], 1)
         self.assertGreater(summary["net_tokens_saved"], 0)
         self.assertAlmostEqual(summary["cache_hit_ratio_pct"], 80.0, places=1)
+        self.assertEqual(summary["context_health"]["status"], "HEALTHY")
+        self.assertEqual(summary["context_health"]["tokens_per_step"], 4500 // 6)
         report_str = tel_mod.render_cli_stats(summary)
         self.assertIn("TokWiz Optimization & Cost Report", report_str)
         self.assertIn(forecast_id, report_str)
@@ -438,6 +440,10 @@ if (doc.getElementById("abProofSection").style.display !== "none") {
 }
 if (doc.getElementById("kpiTurnsSub").textContent.includes("A/B")) {
   throw new Error("kpiTurnsSub leaked A/B text in normal mode");
+}
+ctx.renderDashboard({...payload, context_health: { status: "BLOATED", tokens_per_step: 130000, recommendation: "Bloated (>100k/step) — Run /clear + tokwiz_resume" }});
+if (!doc.getElementById("kpiContextHealth").textContent.includes("Bloated")) {
+  throw new Error("kpiContextHealth did not render Bloated state");
 }
 """
             proc = subprocess.run([node_bin, "-e", harness, main_js], capture_output=True, text=True)
