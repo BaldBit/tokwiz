@@ -371,3 +371,199 @@ def main_checkpoint(argv: Optional[List[str]] = None) -> int:
     out_path = Path(args.out) if args.out else None
     print(generate_checkpoint(root, out_path=out_path, max_tokens=args.max_tokens))
     return 0
+
+
+def diff_slice(
+    root_dir: Path,
+    ref: Optional[str] = None,
+    max_tokens: int = 500,
+) -> str:
+    """Map git diff hunks to enclosing AST symbols, 1-hop callers, and impacted tests in <500 tokens."""
+    skel_mod = _load_module("code_skeletonizer", "code-skeletonizer.py")
+    pg_mod = _load_module("project_graph", "project-graph.py")
+    graph = pg_mod.ProjectGraph(root_dir=root_dir)
+    graph.build(force=False)
+
+    diff_text = ""
+    diff_cmds = (
+        [["git", "diff", "-U0", ref]]
+        if ref
+        else [
+            ["git", "diff", "-U0", "HEAD"],
+            ["git", "diff", "-U0"],
+            ["git", "diff", "-U0", "--cached"],
+            ["git", "diff", "-U0", "HEAD~1..HEAD"],
+        ]
+    )
+    for cmd in diff_cmds:
+        try:
+            proc = subprocess.run(
+                cmd,
+                cwd=str(root_dir),
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if proc.returncode == 0 and proc.stdout.strip():
+                diff_text = proc.stdout
+                break
+        except Exception:
+            continue
+
+    file_ranges: Dict[str, List[Tuple[int, int]]] = {}
+    file_diff_lines: Dict[str, List[str]] = {}
+    cur_file: Optional[str] = None
+    hunk_re = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
+
+    for raw_line in diff_text.splitlines():
+        if raw_line.startswith("+++ b/"):
+            cur_file = raw_line[6:].strip()
+            file_ranges.setdefault(cur_file, [])
+        elif raw_line.startswith("@@ ") and cur_file:
+            m = hunk_re.match(raw_line)
+            if m:
+                start_ln = int(m.group(1))
+                cnt = int(m.group(2)) if m.group(2) is not None else 1
+                end_ln = max(start_ln, start_ln + max(1, cnt) - 1)
+                file_ranges.setdefault(cur_file, []).append((start_ln, end_ln))
+        elif cur_file and (raw_line.startswith("+") or raw_line.startswith("-")) and not raw_line.startswith(("+++", "---")):
+            bucket = file_diff_lines.setdefault(cur_file, [])
+            if len(bucket) < 8:
+                bucket.append(raw_line[:110])
+
+    _, status_changed = _git_changed_files(root_dir)
+    for sc in status_changed:
+        if sc not in file_ranges and (root_dir / sc).is_file():
+            file_ranges[sc] = [(1, 999999)]
+
+    changed_files = sorted(file_ranges.keys())
+    modified_symbols: List[Dict[str, object]] = []
+    callers_list: List[str] = []
+
+    if graph.db_path.exists() and changed_files:
+        with contextlib.closing(sqlite3.connect(str(graph.db_path))) as conn:
+            conn.row_factory = sqlite3.Row
+            node_rows = conn.execute(
+                "SELECT node_id, file_path, name, kind, start_line, end_line, signature FROM nodes WHERE kind != 'file'"
+            ).fetchall()
+            nodes_by_id = {str(r["node_id"]): dict(r) for r in node_rows}
+
+            matched_ids: Set[str] = set()
+            matched_names: Set[str] = set()
+            for r in node_rows:
+                fp = str(r["file_path"])
+                if fp not in file_ranges:
+                    continue
+                sl, el = int(r["start_line"]), int(r["end_line"])
+                ranges = file_ranges[fp]
+                if not ranges or any(not (el < hs or sl > he) for hs, he in ranges):
+                    nid = str(r["node_id"])
+                    if nid not in matched_ids:
+                        matched_ids.add(nid)
+                        matched_names.add(str(r["name"]))
+                        modified_symbols.append(dict(r))
+
+            if matched_ids:
+                edge_rows = conn.execute(
+                    "SELECT source_id, target_id, target_name, file_path, line_no FROM edges"
+                ).fetchall()
+                seen_callers: Set[str] = set()
+                for er in edge_rows:
+                    src_id = str(er["source_id"])
+                    tgt_id = str(er["target_id"] or "")
+                    tgt_nm = str(er["target_name"] or "")
+                    if src_id in matched_ids:
+                        continue
+                    if tgt_id in matched_ids or (not tgt_id and tgt_nm and tgt_nm in matched_names):
+                        caller_nd = nodes_by_id.get(src_id)
+                        if caller_nd:
+                            c_str = (
+                                f"- {caller_nd['name']} [{caller_nd['kind']}] "
+                                f"{caller_nd['file_path']}:L{caller_nd['start_line']}-L{caller_nd['end_line']}"
+                            )
+                        else:
+                            c_str = f"- {er['file_path']}:L{er['line_no']} -> {tgt_nm}"
+                        if c_str not in seen_callers:
+                            seen_callers.add(c_str)
+                            callers_list.append(c_str)
+
+    impacted_tests = _discover_impacted_tests(root_dir, changed_files)[:6] if changed_files else []
+
+    lines: List[str] = [
+        f"# [TokWiz Git-Diff AST Slice: {len(changed_files)} files, {len(modified_symbols)} modified symbols, {len(callers_list)} callers]"
+    ]
+
+    def _try_add(line: str) -> bool:
+        cand = "\n".join(lines + [line])
+        if skel_mod.estimate_tokens(cand) <= max_tokens:
+            lines.append(line)
+            return True
+        return False
+
+    if not changed_files:
+        _try_add("- Working tree and recent diff are clean (0 modified files).")
+        return "\n".join(lines)
+
+    _try_add("## Modified AST Symbols")
+    if modified_symbols:
+        for sym in modified_symbols[:10]:
+            if not _try_add(
+                f"- {sym['name']} [{sym['kind']}] {sym['file_path']}:L{sym['start_line']}-L{sym['end_line']}"
+            ):
+                break
+    else:
+        for fp in changed_files[:6]:
+            if not _try_add(f"- {fp} (file-level change)"):
+                break
+
+    if callers_list:
+        _try_add("## 1-Hop Callers (Blast Radius)")
+        for cl in callers_list[:8]:
+            if not _try_add(cl):
+                break
+
+    if impacted_tests:
+        _try_add("## Impacted Tests")
+        for tf in impacted_tests[:5]:
+            if not _try_add(f"- {tf}"):
+                break
+
+    if file_diff_lines:
+        _try_add("## Compact Diff Hunks")
+        for fp, dlines in list(file_diff_lines.items())[:4]:
+            if not _try_add(f"### {fp}"):
+                break
+            for dl in dlines[:4]:
+                if not _try_add(f"  {dl}"):
+                    break
+
+    return "\n".join(lines)
+
+
+def main_diff_slice(argv: Optional[List[str]] = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="tokwiz diff-slice",
+        description="Map git diff hunks to enclosing AST symbols, 1-hop callers, and impacted tests (<500 tokens).",
+    )
+    parser.add_argument("ref", nargs="?", default=None, help="Optional git ref/range (e.g., HEAD~1, main)")
+    parser.add_argument("--root", default=".", help="Repository root directory")
+    parser.add_argument("--max-tokens", type=int, default=500, help="Maximum tokens in diff slice (default: 500)")
+    parser.add_argument("--json", action="store_true", help="Output JSON diff slice")
+    args = parser.parse_args(argv)
+    root = Path(args.root).resolve()
+    rendered = diff_slice(root, ref=args.ref, max_tokens=args.max_tokens)
+    if args.json:
+        skel_mod = _load_module("code_skeletonizer", "code-skeletonizer.py")
+        print(
+            json.dumps(
+                {
+                    "diff_slice": rendered,
+                    "token_count": skel_mod.estimate_tokens(rendered),
+                    "max_tokens": args.max_tokens,
+                },
+                indent=2,
+            )
+        )
+    else:
+        print(rendered)
+    return 0

@@ -734,6 +734,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             "  graph <build|query|map> Build or query the Tier 2 Tree-Sitter PageRank graph\n"
             "  map [--max-tokens 220]  Generate <220-token zero-LLM codebase architecture map\n"
             "  slice <symbol>          One-shot AST definition + caller snippet bundler\n"
+            "  diff-slice [ref]        Map git diff hunks to AST symbols, callers, and impacted tests\n"
             "  skeleton <file>         Extract compact AST/data skeleton with line numbers\n"
             "  test [files...]         Run graph-impacted tests with 1-line pass receipt\n"
             "  checkpoint              Generate <200-token working memory snapshot\n"
@@ -772,6 +773,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if cmd == "slice":
         mod = _load_script_module("project_graph", "project-graph.py")
         return int(mod.main(["slice", *rest]))
+    if cmd == "diff-slice":
+        mod = _load_script_module("workspace_ops", "workspace-ops.py")
+        return int(mod.main_diff_slice(rest))
     if cmd == "skeleton":
         mod = _load_script_module("code_skeletonizer", "code-skeletonizer.py")
         return int(mod.main(rest))

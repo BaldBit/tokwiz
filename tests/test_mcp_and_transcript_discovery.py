@@ -128,6 +128,13 @@ class TestMCPServerAndTranscriptDiscovery(unittest.TestCase):
         self.assertIn("[TokWiz Repo Architecture Map:", res_map["result"]["content"][0]["text"])
         self.assertIn("validate_token", res_map["result"]["content"][0]["text"])
 
+        res_dslice = mcp_mod.handle_jsonrpc_message(
+            {"jsonrpc": "2.0", "id": 13, "method": "tools/call", "params": {"name": "tokwiz_diff_slice", "arguments": {"max_tokens": 500}}},
+            self.ws,
+        )
+        self.assertFalse(res_dslice["result"]["isError"])
+        self.assertIn("[TokWiz Git-Diff AST Slice:", res_dslice["result"]["content"][0]["text"])
+
         # Verify `tokwiz init` registers MCP configs non-destructively
         (self.ws / ".mcp.json").write_text(json.dumps({"mcpServers": {"custom": {"command": "echo"}}}), encoding="utf-8")
         subprocess.run(
