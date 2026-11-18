@@ -75,48 +75,131 @@ TelemetryStore = _tel_mod.TelemetryStore
 ProjectGraph = _graph_mod.ProjectGraph
 
 
+def _list_registered_workspaces(active_root: Path) -> List[ dict ]:
+    reg_env = os.environ.get("TOKWIZ_WORKSPACES_FILE")
+    reg_file = Path(reg_env) if reg_env else (Path.home() / ".tokwiz" / "workspaces.json")
+    seen = {str(active_root)}
+    result = [{"name": active_root.name, "path": str(active_root)}]
+    if reg_file.exists():
+        try:
+            raw = json.loads(reg_file.read_text(encoding="utf-8"))
+            if isinstance(raw, list):
+                for item in raw:
+                    if isinstance(item, dict) and item.get("path"):
+                        p = Path(str(item["path"]))
+                        if str(p) not in seen and p.is_dir():
+                            seen.add(str(p))
+                            result.append({"name": str(item.get("name") or p.name), "path": str(p)})
+        except Exception:
+            pass
+    return result
+
+
+def _resolve_requested_workspace(qs: dict, active_root: Path) -> Path:
+    ws_param = qs.get("workspace", [None])[0]
+    if not ws_param:
+        return active_root
+    allowed = {w["path"] for w in _list_registered_workspaces(active_root)}
+    cand = str(Path(str(ws_param)).resolve())
+    if cand in allowed or (Path(cand) / ".tokwiz").is_dir():
+        return Path(cand)
+    return active_root
+
+
+def _clear_workspace_telemetry(ws_root: Path) -> None:
+    import time
+
+    tw = ws_root / ".tokwiz"
+    if not tw.is_dir():
+        return
+    for fname in (
+        "telemetry.db",
+        "telemetry.db-wal",
+        "telemetry.db-shm",
+        "forecasts.jsonl",
+        "active-forecast.json",
+        "guardrail-events.jsonl",
+        "session-reads.json",
+    ):
+        (tw / fname).unlink(missing_ok=True)
+    cfg_file = tw / "config.json"
+    cfg: dict = {}
+    if cfg_file.exists():
+        try:
+            cfg = json.loads(cfg_file.read_text(encoding="utf-8"))
+        except Exception:
+            cfg = {}
+    cfg["installed_at"] = time.time()
+    cfg_file.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+
+
 def create_handler(workspace_root: Path):
     index_path = _DASHBOARD_DIR / "index.html"
     active_root = _safe_resolve_root(workspace_root)
 
     class DashboardRequestHandler(BaseHTTPRequestHandler):
+        def _send_json(self, payload: object) -> None:
+            body = json.dumps(payload).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self) -> None:  # noqa: N802
+            parsed = urlparse(self.path)
+            if parsed.path == "/api/clear":
+                qs = parse_qs(parsed.query)
+                target_ws = _resolve_requested_workspace(qs, active_root)
+                _clear_workspace_telemetry(target_ws)
+                self._send_json({"cleared": True, "workspace_root": str(target_ws), "workspace_name": target_ws.name})
+                return
+            self.send_response(404)
+            self.end_headers()
+
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
+            if parsed.path == "/api/workspaces":
+                self._send_json({
+                    "active_root": str(active_root),
+                    "active_name": active_root.name,
+                    "workspaces": _list_registered_workspaces(active_root),
+                })
+                return
+
+            if parsed.path == "/api/clear":
+                qs = parse_qs(parsed.query)
+                target_ws = _resolve_requested_workspace(qs, active_root)
+                _clear_workspace_telemetry(target_ws)
+                self._send_json({"cleared": True, "workspace_root": str(target_ws), "workspace_name": target_ws.name})
+                return
+
             if parsed.path == "/api/stats":
                 qs = parse_qs(parsed.query)
+                target_ws = _resolve_requested_workspace(qs, active_root)
                 days_param = qs.get("days", [None])[0]
                 days = int(days_param) if days_param and str(days_param).isdigit() else None
-                store = TelemetryStore(root_dir=active_root)
+                store = TelemetryStore(root_dir=target_ws)
                 summary = store.get_summary(days=days, limit=100)
-                summary["workspace_root"] = str(active_root)
-                summary["workspace_name"] = active_root.name
-                body = json.dumps(summary).encode("utf-8")
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Cache-Control", "no-store")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
+                summary["workspace_root"] = str(target_ws)
+                summary["workspace_name"] = target_ws.name
+                self._send_json(summary)
                 return
 
             if parsed.path == "/api/graph":
                 qs = parse_qs(parsed.query)
+                target_ws = _resolve_requested_workspace(qs, active_root)
                 max_n_param = qs.get("max_nodes", ["120"])[0]
                 max_nodes = int(max_n_param) if str(max_n_param).isdigit() else 120
                 expand_id = qs.get("expand", [None])[0]
-                graph = ProjectGraph(root_dir=active_root)
+                graph = ProjectGraph(root_dir=target_ws)
                 graph_data = graph.export_graph_data(
                     max_nodes=max_nodes,
                     auto_build=(expand_id is None),
                     expand_id=expand_id,
                 )
-                body = json.dumps(graph_data).encode("utf-8")
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Cache-Control", "no-store")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
+                self._send_json(graph_data)
                 return
 
             if parsed.path in ("/", "/index.html"):

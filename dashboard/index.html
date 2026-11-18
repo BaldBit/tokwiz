@@ -770,9 +770,19 @@
       <p>AST + PageRank Symbol Graph · Pre-Prompt Cost Forecasting · Receipt-Backed Cost Reconciliation</p>
     </div>
     <div class="controls">
+      <select id="workspaceSelect" aria-label="Select Workspace" title="Switch active TokWiz workspace"></select>
+      <select id="daysFilterSelect" aria-label="Filter by Date Range" title="Filter telemetry by date range">
+        <option value="">All Time</option>
+        <option value="1">Last 24h</option>
+        <option value="7">Last 7 Days</option>
+        <option value="30">Last 30 Days</option>
+      </select>
       <button id="liveBtn" type="button" class="active" title="Refresh telemetry">
         <svg class="icon" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
         Refresh
+      </button>
+      <button id="clearHistoryBtn" type="button" title="Clear telemetry &amp; forecasts in this workspace">
+        Clear History
       </button>
       <button id="themeToggleBtn" type="button" title="Toggle Dark / Light theme">
         <svg class="icon" id="themeIconSun" viewBox="0 0 24 24" style="display:none"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
@@ -1728,7 +1738,9 @@
       }
       select3DNode(node);
       try {
-        const res = await fetch(`/api/graph?expand=${encodeURIComponent(node.id)}`);
+        const wsEl = document.getElementById("workspaceSelect");
+        const wsQ = (wsEl && wsEl.value) ? `&workspace=${encodeURIComponent(wsEl.value)}` : "";
+        const res = await fetch(`/api/graph?expand=${encodeURIComponent(node.id)}${wsQ}`);
         const expandedData = await res.json();
         if (expandedData && expandedData.nodes) {
           graph3D.expandedNodeId = node.id;
@@ -2534,13 +2546,38 @@
       }
     }
 
+    async function loadWorkspacesList() {
+      const sel = document.getElementById("workspaceSelect");
+      if (!sel) return;
+      try {
+        const res = await fetch("/api/workspaces");
+        const data = await res.json();
+        const list = Array.isArray(data.workspaces) ? data.workspaces : [];
+        const prev = sel.value || data.active_root || "";
+        sel.innerHTML = list.map(w => {
+          const escP = String(w.path || "").replace(/"/g, "&quot;");
+          const escN = String(w.name || "").replace(/</g, "&lt;");
+          return `<option value="${escP}">${escN}</option>`;
+        }).join("");
+        if (prev) sel.value = prev;
+      } catch (_err) {}
+    }
+
     async function loadLiveStats() {
       document.getElementById("liveBtn").classList.add("active");
       let statsDone = false;
       let graphDone = false;
       setLoadingProgress(15, "Loading workspace telemetry & symbol graph...");
 
-      const statsPromise = fetch("/api/stats")
+      const wsEl = document.getElementById("workspaceSelect");
+      const daysEl = document.getElementById("daysFilterSelect");
+      const wsParam = (wsEl && wsEl.value && wsEl.value !== "ALL") ? `workspace=${encodeURIComponent(wsEl.value)}` : "";
+      const daysParam = (daysEl && daysEl.value && daysEl.value !== "ALL") ? `days=${encodeURIComponent(daysEl.value)}` : "";
+      const statsQs = [wsParam, daysParam].filter(Boolean).join("&");
+      const statsUrl = statsQs ? `/api/stats?${statsQs}` : "/api/stats";
+      const graphUrl = wsParam ? `/api/graph?${wsParam}` : "/api/graph";
+
+      const statsPromise = fetch(statsUrl)
         .then(r => r.json())
         .then(statsData => {
           statsDone = true;
@@ -2553,7 +2590,7 @@
           setLoadingProgress(graphDone ? 100 : 60);
         });
 
-      const graphPromise = fetch("/api/graph")
+      const graphPromise = fetch(graphUrl)
         .then(r => r.json())
         .then(graphData => {
           graphDone = true;
@@ -2672,8 +2709,18 @@
     });
 
     document.getElementById("liveBtn").addEventListener("click", loadLiveStats);
+    document.getElementById("workspaceSelect").addEventListener("change", loadLiveStats);
+    document.getElementById("daysFilterSelect").addEventListener("change", loadLiveStats);
+    document.getElementById("clearHistoryBtn").addEventListener("click", async () => {
+      const wsEl = document.getElementById("workspaceSelect");
+      const wsParam = (wsEl && wsEl.value && wsEl.value !== "ALL") ? `?workspace=${encodeURIComponent(wsEl.value)}` : "";
+      try {
+        await fetch(`/api/clear${wsParam}`, { method: "POST" });
+      } catch (_err) {}
+      loadLiveStats();
+    });
 
-    loadLiveStats();
+    loadWorkspacesList().then(loadLiveStats);
   </script>
 </body>
 </html>

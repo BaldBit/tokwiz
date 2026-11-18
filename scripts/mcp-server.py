@@ -138,6 +138,19 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
             },
         },
     },
+    {
+        "name": "tokwiz_optimize",
+        "description": "Rewrite a broad prompt into a graph-pinned prompt with exact file:Lstart-Lend symbol coordinates.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "prompt": {"type": "string", "description": "Prompt text to pin to AST symbol coordinates"},
+                "max_tokens": {"type": "integer", "default": 250, "description": "Max token budget"},
+                "root": {"type": "string", "default": ".", "description": "Workspace root directory"},
+            },
+            "required": ["prompt"],
+        },
+    },
 ]
 
 
@@ -226,6 +239,14 @@ def _execute_tool(name: str, args: Dict[str, Any], default_root: Path) -> str:
         store = tel.TelemetryStore(ws_root)
         summary = store.get_summary(days=int(args.get("days") or 7))
         return json.dumps(summary, indent=2)
+
+    if name == "tokwiz_optimize":
+        wops = _load_script("workspace_ops", "workspace-ops.py")
+        return wops.optimize_prompt(
+            ws_root,
+            str(args.get("prompt") or ""),
+            max_tokens=int(args.get("max_tokens") or 250),
+        )
 
     raise ValueError(f"Unknown tool: {name}")
 

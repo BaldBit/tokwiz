@@ -262,6 +262,17 @@ class TestCostReconciliationAndCalibration(unittest.TestCase):
                 self.assertIn("nodes", graph_data)
                 self.assertIn("edges", graph_data)
 
+            with urlopen(f"http://127.0.0.1:{port}/api/workspaces") as resp_ws:
+                self.assertEqual(resp_ws.status, 200)
+                ws_data = json.loads(resp_ws.read().decode("utf-8"))
+                self.assertEqual(ws_data["active_root"], str(self.root.resolve()))
+                self.assertGreaterEqual(len(ws_data["workspaces"]), 1)
+
+            with urlopen(f"http://127.0.0.1:{port}/api/clear") as resp_clr:
+                self.assertEqual(resp_clr.status, 200)
+                clr_data = json.loads(resp_clr.read().decode("utf-8"))
+                self.assertTrue(clr_data["cleared"])
+
             with urlopen(f"http://127.0.0.1:{port}/") as resp_html:
                 self.assertEqual(resp_html.status, 200)
                 html = resp_html.read().decode("utf-8")
@@ -279,6 +290,9 @@ class TestCostReconciliationAndCalibration(unittest.TestCase):
             self.assertNotIn(forbidden, html, f"Found forbidden stale UI string: {forbidden}")
         self.assertRegex(html, r'id="abProofSection"[^>]*style="[^"]*display:\s*none')
         self.assertIn('id="loadingBanner"', html)
+        self.assertIn('id="workspaceSelect"', html)
+        self.assertIn('id="daysFilterSelect"', html)
+        self.assertIn('id="clearHistoryBtn"', html)
         self.assertIn('class="prompt-cell"', html)
 
         # 2. Every graph-header and chart-header <h2> must include an ⓘ info-tip

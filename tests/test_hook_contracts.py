@@ -196,6 +196,15 @@ class TestHookContractsAndResilience(unittest.TestCase):
         self.assertIn("echo custom-stop", json.dumps(claude_cfg))
         self.assertNotIn("post-turn-record.py", json.dumps(claude_cfg))
 
+        # Verify `tokwiz init --portable` emits zero machine-specific absolute paths
+        self.assertEqual(cli_mod.main(["init", "--agent", "claude", "--portable", "--root", str(self.root)]), 0)
+        portable_settings = (self.root / ".claude" / "settings.json").read_text(encoding="utf-8")
+        portable_mcp = (self.root / ".mcp.json").read_text(encoding="utf-8")
+        self.assertIn("tokwiz hook pre-tool-guard.py", portable_settings)
+        self.assertNotIn(str(REPO_ROOT), portable_settings)
+        self.assertNotIn(str(self.root), portable_mcp)
+        self.assertEqual(cli_mod.main(["hook", "pre-tool-guard.py"]), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
