@@ -184,7 +184,8 @@ def _cmd_init(argv: List[str]) -> int:
         graph_stats = {"total_nodes": 0, "total_edges": 0}
 
     skill_src = _REPO_ROOT / "SKILL.md"
-    if args.portable:
+    use_portable = bool(args.portable or _is_workspace_portable(base_dir))
+    if use_portable:
         pre_prompt_cmd = "tokwiz hook pre-prompt-predict.py"
         pre_tool_cmd = "tokwiz hook pre-tool-guard.py"
         post_turn_cmd = "tokwiz hook post-turn-record.py"
@@ -322,6 +323,8 @@ def _cmd_init(argv: List[str]) -> int:
         except Exception:
             cfg = {}
     cfg.setdefault("installed_at", time.time())
+    if use_portable:
+        cfg["portable"] = True
     cfg_file.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
 
     print(
@@ -329,6 +332,34 @@ def _cmd_init(argv: List[str]) -> int:
         f"| Graph: {graph_stats.get('total_nodes', 0)} nodes, {graph_stats.get('total_edges', 0)} edges"
     )
     return 0
+
+
+def _is_workspace_portable(base_dir: Path) -> bool:
+    """Detect whether a workspace was initialized with `--portable` (via config.json or existing hook/MCP files)."""
+    cfg_file = base_dir / ".tokwiz" / "config.json"
+    if cfg_file.exists():
+        try:
+            cfg = json.loads(cfg_file.read_text(encoding="utf-8"))
+            if isinstance(cfg, dict) and bool(cfg.get("portable")):
+                return True
+        except Exception:
+            pass
+    for rel in (
+        Path(".claude") / "settings.json",
+        Path(".agents") / "hooks.json",
+        Path(".mcp.json"),
+        Path(".agents") / "mcp.json",
+        Path(".cursor") / "mcp.json",
+    ):
+        p = base_dir / rel
+        if p.exists():
+            try:
+                txt = p.read_text(encoding="utf-8", errors="replace")
+                if "tokwiz hook " in txt or '"command": "tokwiz"' in txt:
+                    return True
+            except Exception:
+                pass
+    return False
 
 
 def _remove_tokwiz_hooks_from_file(path: Path) -> bool:
@@ -564,6 +595,7 @@ def _cmd_update(argv: List[str]) -> int:
     parser.add_argument("--version", default="latest", help="Target release tag (e.g. v1.4.1) or 'latest'")
     parser.add_argument("--root", default=".", help="Optional project root to refresh via `tokwiz init`")
     parser.add_argument("--init", action="store_true", help="Force re-running `tokwiz init --agent all` after update")
+    parser.add_argument("--portable", action="store_true", help="Use portable `tokwiz` hook/MCP commands when refreshing project")
     args = parser.parse_args(argv)
 
     cur_ver = _current_version()
@@ -624,8 +656,11 @@ def _cmd_update(argv: List[str]) -> int:
         print(f"[TokWiz Update] Updated runtime to {_current_version()} at {_REPO_ROOT}")
 
     target_root = _resolve_root(args.root)
-    if args.init or (target_root / ".tokwiz").exists():
-        return _cmd_init(["--agent", "all", "--root", str(target_root)])
+    if args.init or args.portable or (target_root / ".tokwiz").exists():
+        init_args = ["--agent", "all", "--root", str(target_root)]
+        if args.portable or _is_workspace_portable(target_root):
+            init_args.append("--portable")
+        return _cmd_init(init_args)
     return 0
 
 
