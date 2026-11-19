@@ -213,34 +213,50 @@ def _compute_turn_receipts(
     blocked_reads: List[Tuple[str, int]] = []
 
     for ev in tool_events:
-        tname = str(ev.get("name", ""))
+        tname = str(ev.get("name", "")).lower()
         args = ev.get("args") if isinstance(ev.get("args"), dict) else {}
-        out_tok = max(1, int(ev.get("output_tokens", 40)))
+        out_tok = max(1, int(ev.get("output_tokens") or (int(ev.get("output_chars") or 0) // 4) or 40))
         out_txt = str(ev.get("output_text", ""))
 
-        if tname == "read_file":
-            p_raw = str(args.get("Path", "")).strip().strip('"').strip("'")
+        # Normalize MCP tool names (`mcp__tokwiz__tokwiz_slice`, `mcp_tokwiz_tokwiz_slice`, `tokwiz_slice`)
+        mcp_suffix = ""
+        if "tokwiz_" in tname:
+            mcp_suffix = tname[tname.rfind("tokwiz_") :]
+
+        if tname in ("read_file", "read", "view_file"):
+            p_raw = str(
+                args.get("Path") or args.get("file_path") or args.get("path") or ""
+            ).strip().strip('"').strip("'")
             if p_raw.startswith(ws_str + "/"):
                 rel = p_raw[len(ws_str) + 1 :].replace("\\", "/")
             else:
                 rel = p_raw.replace("\\", "/")
-            if rel.startswith(".") or "/." in rel:
+            if not rel or rel.startswith(".") or "/." in rel:
                 continue
             files_read_in_turn.add(rel)
-            s_raw = args.get("StartLine")
+            s_raw = args.get("StartLine") if args.get("StartLine") is not None else args.get("offset")
             e_raw = args.get("EndLine")
+            lim_raw = args.get("limit")
             s_line = str(s_raw).strip().strip('"').strip("'") if s_raw is not None else None
             e_line = str(e_raw).strip().strip('"').strip("'") if e_raw is not None else None
+            lim_val = str(lim_raw).strip().strip('"').strip("'") if lim_raw is not None else None
             if s_line == "":
                 s_line = None
             if e_line == "":
                 e_line = None
+            if lim_val == "":
+                lim_val = None
             total_lines = source_files.get(rel, (100, 400, ""))[0]
-            if s_line is None and e_line is None:
+            if s_line is None and e_line is None and lim_val is None:
                 full_reads.add(rel)
             else:
                 sl = int(s_line or 1)
-                el = int(e_line or total_lines)
+                if e_line is not None:
+                    el = int(e_line)
+                elif lim_val is not None:
+                    el = sl + max(1, int(lim_val)) - 1
+                else:
+                    el = total_lines
                 actual_el = min(el, total_lines)
                 span = max(1, actual_el - sl + 1)
                 if (sl <= 1 and el >= total_lines) or span >= max(1, int(total_lines * 0.88)):
@@ -249,8 +265,8 @@ def _compute_turn_receipts(
                     est_slice_tok = min(out_tok, max(20, int(source_files.get(rel, (100, 400, ""))[1] * (span / max(1, total_lines)))))
                     ranged_reads.setdefault(rel, []).append((sl, actual_el, est_slice_tok))
 
-        elif tname == "run_command":
-            cmd = str(args.get("CommandLine", "")).strip().strip('"')
+        elif tname in ("run_command", "bash", "shell"):
+            cmd = str(args.get("CommandLine") or args.get("command") or "").strip().strip('"')
             # 1. Project Graph query / slice / map
             for m_gq in re.finditer(r"(?:(?:tokwiz|cli\.py)\s+graph|project-graph\.py).*?\b(?:query|slice)\s+([^\s\"'&;]+)", cmd):
                 sym = m_gq.group(1).strip()
@@ -284,11 +300,29 @@ def _compute_turn_receipts(
             if re.search(r"\b(?:tokwiz|cli\.py)\s+resume\b", cmd):
                 resume_runs.append(min(out_tok, 200))
 
-        elif tname in ("tokwiz_map", "mcp_tokwiz_tokwiz_map"):
+        elif mcp_suffix in ("tokwiz_slice", "tokwiz_graph_query", "tokwiz_trace"):
+            syms = args.get("symbols")
+            if isinstance(syms, list) and syms:
+                sym_lbl = ",".join(str(s) for s in syms[:3])
+            else:
+                sym_lbl = str(args.get("query") or args.get("symbol") or args.get("source") or "symbol")
+            graph_queries.append((sym_lbl, min(out_tok, 300)))
+        elif mcp_suffix == "tokwiz_skeleton":
+            raw_target = str(args.get("file_path") or args.get("path") or "").strip().strip('"').strip("'")
+            if raw_target:
+                if raw_target.startswith(ws_str + "/"):
+                    rel_sk = raw_target[len(ws_str) + 1 :].replace("\\", "/")
+                else:
+                    rel_sk = raw_target.lstrip("./").replace("\\", "/")
+                files_read_in_turn.add(rel_sk)
+                skeleton_runs.setdefault(rel_sk, []).append(min(out_tok, 260))
+        elif mcp_suffix == "tokwiz_test":
+            filter_runs.append(("tokwiz_test", out_tok, out_txt))
+        elif mcp_suffix == "tokwiz_map":
             map_runs.append(min(out_tok, 220))
-        elif tname in ("tokwiz_diff_slice", "mcp_tokwiz_tokwiz_diff_slice"):
+        elif mcp_suffix == "tokwiz_diff_slice":
             diff_slice_runs.append(min(out_tok, 450))
-        elif tname in ("tokwiz_resume", "mcp_tokwiz_tokwiz_resume"):
+        elif mcp_suffix == "tokwiz_resume":
             resume_runs.append(min(out_tok, 200))
 
     receipts: List[Dict[str, object]] = []
@@ -688,6 +722,7 @@ def _parse_claude_transcript_turns(
                         if tid in pending_tools:
                             t_info = pending_tools.pop(tid)
                             t_info["output_chars"] = len(res_text)
+                            t_info["output_tokens"] = max(1, len(res_text) // 4)
                             t_info["output_text"] = res_text
                             cur["tool_events"].append(t_info)
                     elif blk.get("type") == "text":

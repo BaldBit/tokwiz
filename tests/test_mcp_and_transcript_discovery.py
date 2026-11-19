@@ -168,8 +168,8 @@ class TestMCPServerAndTranscriptDiscovery(unittest.TestCase):
                     [
                         json.dumps({"type": "user", "timestamp": "2026-11-15T10:00:00Z", "message": {"role": "user", "content": [{"type": "text", "text": "Refactor validate_token"}]}}),
                         json.dumps({"type": "user", "isMeta": True, "timestamp": "2026-11-15T10:00:01Z", "message": {"role": "user", "content": [{"type": "text", "text": "Base directory for this skill: /tmp/.claude/skills/tokwiz # TokWiz Optimization Rules"}]}}),
-                        json.dumps({"type": "assistant", "message": {"model": "claude-sonnet-4", "usage": {"input_tokens": 120, "cache_creation_input_tokens": 300, "cache_read_input_tokens": 1000, "output_tokens": 80}, "content": [{"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": str(self.ws / "auth.py"), "offset": 1, "limit": 3}}]}}),
-                        json.dumps({"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "def validate_token..."}]}}),
+                        json.dumps({"type": "assistant", "message": {"model": "claude-sonnet-4", "usage": {"input_tokens": 120, "cache_creation_input_tokens": 300, "cache_read_input_tokens": 1000, "output_tokens": 80}, "content": [{"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": str(self.ws / "auth.py"), "offset": 1, "limit": 2}}, {"type": "tool_use", "id": "t2", "name": "mcp__tokwiz__tokwiz_map", "input": {"max_tokens": 220}}]}}),
+                        json.dumps({"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "def validate_token..."}, {"type": "tool_result", "tool_use_id": "t2", "content": "# [TokWiz Repo Architecture Map]"}]}}),
                     ]
                 )
                 + "\n",
@@ -180,6 +180,8 @@ class TestMCPServerAndTranscriptDiscovery(unittest.TestCase):
             self.assertEqual(found_claude[0]["prompt"], "Refactor validate_token")
             self.assertEqual(found_claude[0]["usage_payload"]["agent_host"], "claude")
             self.assertEqual(found_claude[0]["tool_counts"]["ranged_read"], 1)
+            self.assertGreater(found_claude[0]["receipt_saved_tokens"], 0)
+            self.assertTrue(any(r["type"] == "REPO_MAP" for r in found_claude[0]["receipts"]))
 
             # Now test Codex discovery when Claude dir is absent
             shutil.rmtree(slug_dir)

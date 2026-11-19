@@ -380,7 +380,8 @@ class TelemetryStore:
         tot_in = sum(int(t["real_input_tokens"]) for t in turns)
         tot_cached = sum(int(t["real_cached_input_tokens"]) for t in turns)
         cache_ratio = (tot_cached / max(1, tot_in)) * 100.0
-        avg_red_pct = (tot_saved_tok / max(1, tot_eff_tok + tot_saved_tok)) * 100.0
+        total_net_saved = tot_saved_tok + guardrail_saved_tokens
+        avg_red_pct = (total_net_saved / max(1, tot_eff_tok + total_net_saved)) * 100.0
 
         variance_counts: Dict[str, int] = {}
         level_dist: Dict[str, int] = {"1": 0, "2": 0, "3": 0}
