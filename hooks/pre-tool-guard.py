@@ -64,7 +64,7 @@ READ_TOOL_NAMES = {
     "mcp_filesystem_read_file",
 }
 
-MAX_UNBOUNDED_LINES = 150
+MAX_UNBOUNDED_LINES = 300
 MAX_STRUCTURED_UNBOUNDED_LINES = 150
 STRUCTURED_DATA_EXTENSIONS = {".json", ".yaml", ".yml", ".toml", ".sql"}
 GREP_TOOL_NAMES = {"grep", "grep_search", "ripgrep", "search_grep"}

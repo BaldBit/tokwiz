@@ -274,12 +274,40 @@ class TokenEstimator:
 
         return PROFILES["A"]
 
+    def _estimate_recent_context_tokens(self) -> int:
+        """Seed starting context from the latest observed per-step effective context in telemetry.db."""
+        db_path = self.root_dir / ".tokwiz" / "telemetry.db"
+        if not db_path.exists():
+            return 450
+        try:
+            import contextlib
+            import sqlite3
+
+            with contextlib.closing(sqlite3.connect(str(db_path), timeout=0.3)) as conn:
+                row = conn.execute(
+                    "SELECT real_input_tokens, real_cached_input_tokens, real_steps FROM turns ORDER BY timestamp DESC LIMIT 1"
+                ).fetchone()
+            if not row:
+                return 450
+            steps = max(1, int(row[2] or 1))
+            raw_in = int(row[0] or 0)
+            cached_in = min(raw_in, int(row[1] or 0))
+            uncached_in = max(0, raw_in - cached_in)
+            eff_per_step = (uncached_in + int(cached_in * 0.1)) // steps
+            if eff_per_step > 450:
+                return min(40_000, eff_per_step)
+        except Exception:
+            pass
+        return 450
+
     def estimate(
         self,
         prompt: str,
         context_tokens: int = 450,
         forced_level: Optional[int] = None,
     ) -> ForecastResult:
+        if context_tokens == 450:
+            context_tokens = self._estimate_recent_context_tokens()
         graph_slice = self.graph.query(prompt, max_tokens=400, auto_build=True)
         profile = self.classify_prompt(prompt, graph_slice)
 

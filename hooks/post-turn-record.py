@@ -678,7 +678,7 @@ def _parse_claude_transcript_turns(
                     "receipts": receipts,
                     "usage": {
                         "input_tokens": in_tot,
-                        "cached_input_tokens": cached_tot,
+                        "cache_read_input_tokens": cached_tot,
                         "output_tokens": out_tot,
                         "reasoning_tokens": 0,
                         "tool_output_tokens": int(cur["tool_tok"]),
