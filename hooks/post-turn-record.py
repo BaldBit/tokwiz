@@ -422,7 +422,7 @@ def _compute_turn_receipts(
         unread_src = [rel for rel in sorted(source_files.keys()) if rel not in files_read_in_turn and rel not in credited_avoided][:4]
         for u_rel in unread_src:
             credited_avoided.add(u_rel)
-        avoided_map_tok = min(8000, sum(min(source_files[u_rel][1], 3000) for u_rel in unread_src)) or 3200
+        avoided_map_tok = min(8000, max(600, sum(min(source_files[u_rel][1], 3000) for u_rel in unread_src)))
         saved_map_tok = max(0, avoided_map_tok - map_tok)
         if saved_map_tok > 0:
             receipts.append(
