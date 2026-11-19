@@ -167,6 +167,7 @@ class TestMCPServerAndTranscriptDiscovery(unittest.TestCase):
                 "\n".join(
                     [
                         json.dumps({"type": "user", "timestamp": "2026-11-15T10:00:00Z", "message": {"role": "user", "content": [{"type": "text", "text": "Refactor validate_token"}]}}),
+                        json.dumps({"type": "user", "timestamp": "2026-11-15T10:00:00Z", "message": {"role": "user", "content": [{"type": "text", "text": "<task-notification><task-id>bd2l9nsz1</task-id></task-notification>"}]}}),
                         json.dumps({"type": "user", "isMeta": True, "timestamp": "2026-11-15T10:00:01Z", "message": {"role": "user", "content": [{"type": "text", "text": "Base directory for this skill: /tmp/.claude/skills/tokwiz # TokWiz Optimization Rules"}]}}),
                         json.dumps({"type": "assistant", "message": {"model": "claude-sonnet-4", "usage": {"input_tokens": 120, "cache_creation_input_tokens": 300, "cache_read_input_tokens": 1000, "output_tokens": 80}, "content": [{"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": str(self.ws / "auth.py"), "offset": 1, "limit": 2}}, {"type": "tool_use", "id": "t2", "name": "mcp__tokwiz__tokwiz_map", "input": {"max_tokens": 220}}]}}),
                         json.dumps({"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "def validate_token..."}, {"type": "tool_result", "tool_use_id": "t2", "content": "# [TokWiz Repo Architecture Map]"}]}}),
@@ -192,6 +193,7 @@ class TestMCPServerAndTranscriptDiscovery(unittest.TestCase):
                     [
                         json.dumps({"type": "session_meta", "payload": {"cwd": str(self.ws)}}),
                         json.dumps({"type": "event_msg", "timestamp": "2026-11-15T10:05:00Z", "payload": {"type": "user_message", "message": "Check auth.py"}}),
+                        json.dumps({"type": "response_item", "payload": {"type": "function_call", "name": "shell", "arguments": json.dumps({"command": "tokwiz map"})}}),
                         json.dumps({"type": "event_msg", "payload": {"type": "token_count", "info": {"last_token_usage": {"input_tokens": 250, "cached_input_tokens": 100, "output_tokens": 45, "reasoning_output_tokens": 15}}}}),
                     ]
                 )
@@ -202,6 +204,7 @@ class TestMCPServerAndTranscriptDiscovery(unittest.TestCase):
             self.assertEqual(len(found_codex), 1)
             self.assertEqual(found_codex[0]["prompt"], "Check auth.py")
             self.assertEqual(found_codex[0]["usage_payload"]["agent_host"], "codex")
+            self.assertGreater(found_codex[0]["receipt_saved_tokens"], 0)
 
             # Verify pre-init transcripts are ignored once `.tokwiz/config.json` has `installed_at`
             (self.ws / ".tokwiz").mkdir(parents=True, exist_ok=True)

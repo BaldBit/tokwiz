@@ -138,15 +138,20 @@ class TestHookContractsAndResilience(unittest.TestCase):
         self.assertIn(".tokwiz/", (self.root / ".gitignore").read_text(encoding="utf-8"))
 
     def test_ide_wrapper_tags_ignored_and_stripped(self) -> None:
-        # Pure IDE notification tag must NOT create a forecast
-        ide_only = {
-            "hook_event_name": "UserPromptSubmit",
-            "prompt": "<ide_opened_file>The user opened the file /tmp/CLAUDE.md in the IDE.</ide_opened_file>",
-            "cwd": str(self.root),
-        }
-        out_only, _ = self._run_hook("pre-prompt-predict.py", json.dumps(ide_only))
-        self.assertEqual(out_only.get("decision"), "allow")
-        self.assertFalse((self.root / ".tokwiz" / "forecasts.jsonl").exists())
+        # Pure IDE / background task notification tags must NOT create a forecast
+        for noisy_xml in (
+            "<ide_opened_file>The user opened the file /tmp/CLAUDE.md in the IDE.</ide_opened_file>",
+            "<task-notification><task-id>bd2l9nsz1</task-id><tool-use-id>toolu_01</tool-use-id></task-notification>",
+            "<future-agent-event>internal metadata</future-agent-event>",
+        ):
+            ide_only = {
+                "hook_event_name": "UserPromptSubmit",
+                "prompt": noisy_xml,
+                "cwd": str(self.root),
+            }
+            out_only, _ = self._run_hook("pre-prompt-predict.py", json.dumps(ide_only))
+            self.assertEqual(out_only.get("decision"), "allow")
+            self.assertFalse((self.root / ".tokwiz" / "forecasts.jsonl").exists())
 
         # Mixed IDE tag + real user prompt must strip the tag and keep only the real prompt
         mixed = {

@@ -906,7 +906,18 @@ def _parse_codex_transcript_turns(
             if payload.get("type") == "function_call":
                 cur["steps"] = int(cur["steps"]) + 1
                 fname = str(payload.get("name") or "").lower()
-                cur["tool_events"].append({"name": fname, "args": {}, "output_chars": 0, "output_text": ""})
+                raw_args = payload.get("arguments")
+                parsed_args: Dict[str, object] = {}
+                if isinstance(raw_args, dict):
+                    parsed_args = raw_args
+                elif isinstance(raw_args, str) and raw_args.strip().startswith("{"):
+                    try:
+                        loaded = json.loads(raw_args)
+                        if isinstance(loaded, dict):
+                            parsed_args = loaded
+                    except Exception:
+                        parsed_args = {}
+                cur["tool_events"].append({"name": fname, "args": parsed_args, "output_chars": 0, "output_text": ""})
 
     _flush()
     return turns if cwd_matched else []
@@ -1039,10 +1050,12 @@ def _find_workspace_transcript_turns(
 _IDE_WRAPPER_TAG_RE = re.compile(
     r"<(?:ide_opened_file|ide_selection|system-reminder|local-command-caveat|"
     r"command-name|command-message|command-args|local-command-stdout|"
-    r"CONTEXT_SUMMARY|user_information|ADDITIONAL_METADATA)\b[^>]*>.*?"
+    r"task-notification|teammate-message|agent-notification|user-prompt-submit-hook|"
+    r"SYSTEM_MESSAGE|CONTEXT_SUMMARY|user_information|ADDITIONAL_METADATA)\b[^>]*>.*?"
     r"(?:</(?:ide_opened_file|ide_selection|system-reminder|local-command-caveat|"
     r"command-name|command-message|command-args|local-command-stdout|"
-    r"CONTEXT_SUMMARY|user_information|ADDITIONAL_METADATA)>|$)",
+    r"task-notification|teammate-message|agent-notification|user-prompt-submit-hook|"
+    r"SYSTEM_MESSAGE|CONTEXT_SUMMARY|user_information|ADDITIONAL_METADATA)>|$)",
     re.DOTALL | re.IGNORECASE,
 )
 
@@ -1052,6 +1065,8 @@ def _clean_user_prompt(raw: str) -> str:
     if not cleaned:
         return ""
     if cleaned.startswith("[Request interrupted") or cleaned.startswith("Base directory for this skill:"):
+        return ""
+    if re.match(r"^<[a-zA-Z_][a-zA-Z0-9_:-]*\b[^>]*>", cleaned):
         return ""
     return cleaned
 

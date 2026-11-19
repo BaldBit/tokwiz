@@ -370,7 +370,8 @@ class TelemetryStore:
         tot_f_cost = sum(float(t["forecast_cost_usd"]) for t in turns)
         tot_r_cost = sum(float(t["real_cost_usd"]) for t in turns)
         tot_u_cost = sum(float(t["unoptimized_cost_usd"]) for t in turns)
-        tot_saved_cost = sum(float(t["net_cost_saved_usd"]) for t in turns)
+        guardrail_saved_cost = (guardrail_saved_tokens / 1_000_000.0) * 3.0 if guardrail_saved_tokens > 0 else 0.0
+        tot_saved_cost = sum(float(t["net_cost_saved_usd"]) for t in turns) + guardrail_saved_cost
         tot_cost_delta = tot_r_cost - tot_f_cost
 
         mape = sum(float(t["ape_pct"]) for t in turns) / total_turns
