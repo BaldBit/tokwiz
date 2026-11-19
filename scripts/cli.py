@@ -297,7 +297,7 @@ def _cmd_init(argv: List[str]) -> int:
             gem_hooks["PreToolUse"] = _merge_hook_list(
                 gem_hooks.get("PreToolUse"),
                 {
-                    "matcher": "read_file|view_file|Read|run_command|Bash",
+                    "matcher": "read_file|view_file|Read|Grep|Glob|grep_search|find_by_name|list_dir|run_command|Bash",
                     "command": pre_tool_cmd,
                     "timeout": 5,
                 },

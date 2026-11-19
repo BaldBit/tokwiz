@@ -150,7 +150,7 @@ def _try_graph_intercept_glob(workspace_root: Path, pattern: str) -> Optional[st
         f"[TokWiz Guardrail] Broad Glob (`{pattern or '*'}`) intercepted via `.tokwiz/graph.db` "
         f"(saved ~1,200 tokens). Top indexed files:\n"
         + "\n".join(lines)
-        + "\n\nQuery `tokwiz_graph_query` / `tokwiz_slice` or pass a narrow Glob pattern."
+        + "\n\nUse `tokwiz_map` for a <220-token architecture overview, `tokwiz_graph_query` / `tokwiz_slice`, or pass a narrow Glob pattern."
     )
 
 
@@ -485,7 +485,7 @@ def handle_pre_tool_use(
                     _record_guardrail_event(workspace_root, "redirected_unfiltered_diff", seg_clean[:80], 1500)
                     return _build_deny_response(
                         "[TokWiz Guardrail] Unfiltered `git diff` can dump lockfiles and large hunks. "
-                        f"Run `tokwiz filter -- {seg_clean}` or `git diff --stat` first."
+                        f"Use `mcp__tokwiz__tokwiz_diff_slice` (`tokwiz diff-slice`), `tokwiz filter -- {seg_clean}`, or `git diff --stat` instead."
                     )
         return _build_allow_response()
 

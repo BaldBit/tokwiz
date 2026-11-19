@@ -138,6 +138,27 @@ def handle_pre_prompt(payload: Dict[str, object], default_root: Optional[Path] =
     banner = res.banner
     event_name = str(payload.get("hook_event_name") or payload.get("event") or "PreInvocation")
 
+    # Surface Context-Rot / Bloat alert in the zero-token UI banner if latest turn exceeded 100k tok/step
+    try:
+        db_path = workspace_root / ".tokwiz" / "telemetry.db"
+        if db_path.exists():
+            import contextlib
+            import sqlite3
+
+            with contextlib.closing(sqlite3.connect(str(db_path), timeout=0.3)) as conn:
+                row = conn.execute(
+                    "SELECT real_input_tokens, real_steps FROM turns ORDER BY timestamp DESC LIMIT 1"
+                ).fetchone()
+            if row:
+                tok_per_step = int(row[0] or 0) // max(1, int(row[1] or 1))
+                if tok_per_step > 100_000:
+                    banner += (
+                        f"\n> ⚠️ **Context Bloat Alert ({tok_per_step // 1000}k tok/step):** "
+                        "Run `/clear` then call `tokwiz_resume` (`tokwiz resume`) to reload your <200-token checkpoint."
+                    )
+    except Exception:
+        pass
+
     # Optional budget gate check
     max_cost = cfg.get("max_prompt_cost_usd")
     enforce_gate = bool(cfg.get("enforce_budget_gate", False))

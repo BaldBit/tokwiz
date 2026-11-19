@@ -13,7 +13,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Read|read_file|view_file|Bash|run_command",
+        "matcher": "Read|Grep|Glob|read_file|view_file|Bash|run_command",
         "hooks": [
           {
             "type": "command",
