@@ -241,7 +241,12 @@ class TelemetryStore:
 
         def _is_xml_system_prompt(raw_p: object) -> bool:
             s = str(raw_p or "").strip()
-            return bool(re.match(r"^<[a-zA-Z_][a-zA-Z0-9_:-]*\b[^>]*>", s))
+            return (
+                bool(re.match(r"^<[a-zA-Z_][a-zA-Z0-9_:-]*\b[^>]*>", s))
+                or s.startswith("This session is being continued from a previous conversation")
+                or s.startswith("Base directory for this skill:")
+                or s.startswith("[Request interrupted")
+            )
 
         turns = [dict(r) for r in rows if not _is_xml_system_prompt(r["prompt"])]
         for t in turns:

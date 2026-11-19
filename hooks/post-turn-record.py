@@ -1064,7 +1064,11 @@ def _clean_user_prompt(raw: str) -> str:
     cleaned = _IDE_WRAPPER_TAG_RE.sub("", raw or "").strip()
     if not cleaned:
         return ""
-    if cleaned.startswith("[Request interrupted") or cleaned.startswith("Base directory for this skill:"):
+    if (
+        cleaned.startswith("[Request interrupted")
+        or cleaned.startswith("Base directory for this skill:")
+        or cleaned.startswith("This session is being continued from a previous conversation")
+    ):
         return ""
     if re.match(r"^<[a-zA-Z_][a-zA-Z0-9_:-]*\b[^>]*>", cleaned):
         return ""
@@ -1420,13 +1424,20 @@ def handle_post_turn(payload: Dict[str, object], default_root: Optional[Path] = 
         tp = Path(str(payload["transcript_path"]))
         parsed_turns = _parse_claude_transcript_turns(tp, workspace_root)
         if parsed_turns:
-            latest_t = parsed_turns[-1]
-            u_raw = latest_t.get("usage_payload")
-            if isinstance(u_raw, dict):
-                usage_payload = dict(u_raw)
-                usage_payload["receipts"] = latest_t.get("receipts", [])
-                usage_payload["transcript_path"] = str(tp)
-        if usage_payload is None:
+            # Prefer syncing via transcript-to-forecast matching so Stop hook never
+            # reconciles a mismatched forecast or double-counts a compacted turn.
+            synced = sync_workspace_transcript_turns(workspace_root)
+            if synced:
+                record = synced[-1]
+                usage_payload = None
+            else:
+                latest_t = parsed_turns[-1]
+                u_raw = latest_t.get("usage_payload")
+                if isinstance(u_raw, dict):
+                    usage_payload = dict(u_raw)
+                    usage_payload["receipts"] = latest_t.get("receipts", [])
+                    usage_payload["transcript_path"] = str(tp)
+        if usage_payload is None and not parsed_turns:
             usage_payload = _extract_usage_from_transcript_file(tp)
 
     if usage_payload is not None:
@@ -1436,7 +1447,7 @@ def handle_post_turn(payload: Dict[str, object], default_root: Optional[Path] = 
         cal_mod = _load_calibration_module()
         engine = cal_mod.CalibrationEngine(root_dir=workspace_root)
         record = engine.reconcile_turn(forecast=forecast, usage_payload=usage_payload)
-    else:
+    elif "record" not in locals():
         # Sync directly against real completed turns in the workspace's session transcript
         synced = sync_workspace_transcript_turns(workspace_root)
         if not synced:

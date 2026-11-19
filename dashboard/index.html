@@ -2381,7 +2381,10 @@
       }
 
       const reconciledIds = new Set((data.turns || []).map(t => t.forecast_id));
-      const pendingForecasts = (data.forecasts || []).filter(f => !reconciledIds.has(f.forecast_id));
+      const reconciledPrompts = new Set((data.turns || []).map(t => String(t.prompt || "").trim().toLowerCase()));
+      const pendingForecasts = (data.forecasts || []).filter(
+        f => !reconciledIds.has(f.forecast_id) && !reconciledPrompts.has(String(f.prompt || "").trim().toLowerCase())
+      );
 
       document.getElementById("kpiReduction").textContent = `${Number(data.avg_reduction_pct || 0).toFixed(1)}%`;
       document.getElementById("kpiTurnsSub").textContent = turnsCount > 0

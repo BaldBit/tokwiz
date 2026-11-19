@@ -51,7 +51,11 @@ def _clean_user_prompt(raw: str) -> str:
     cleaned = _IDE_WRAPPER_TAG_RE.sub("", raw or "").strip()
     if not cleaned:
         return ""
-    if cleaned.startswith("[Request interrupted") or cleaned.startswith("Base directory for this skill:"):
+    if (
+        cleaned.startswith("[Request interrupted")
+        or cleaned.startswith("Base directory for this skill:")
+        or cleaned.startswith("This session is being continued from a previous conversation")
+    ):
         return ""
     if re.match(r"^<[a-zA-Z_][a-zA-Z0-9_:-]*\b[^>]*>", cleaned):
         return ""
