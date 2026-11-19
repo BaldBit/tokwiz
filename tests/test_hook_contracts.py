@@ -206,9 +206,23 @@ class TestHookContractsAndResilience(unittest.TestCase):
         portable_settings = (self.root / ".claude" / "settings.json").read_text(encoding="utf-8")
         portable_mcp = (self.root / ".mcp.json").read_text(encoding="utf-8")
         self.assertIn("tokwiz hook pre-tool-guard.py", portable_settings)
+        self.assertIn("tokwiz hook session-start-resume.py", portable_settings)
         self.assertNotIn(str(REPO_ROOT), portable_settings)
         self.assertNotIn(str(self.root), portable_mcp)
         self.assertEqual(cli_mod.main(["hook", "pre-tool-guard.py"]), 0)
+
+        # Verify SessionStart auto-resume hook injects checkpoint on clear/compact and stays silent on startup
+        (self.root / ".tokwiz" / "checkpoint.md").write_text("# TokWiz Checkpoint\n- Branch: main\n", encoding="utf-8")
+        out_clear, _ = self._run_hook(
+            "session-start-resume.py",
+            json.dumps({"cwd": str(self.root), "source": "clear", "hook_event_name": "SessionStart"}),
+        )
+        self.assertIn("TokWiz Checkpoint", out_clear["hookSpecificOutput"]["additionalContext"])
+        out_startup, _ = self._run_hook(
+            "session-start-resume.py",
+            json.dumps({"cwd": str(self.root), "source": "startup", "hook_event_name": "SessionStart"}),
+        )
+        self.assertEqual(out_startup, {})
 
         # Re-running `tokwiz init` WITHOUT `--portable` (as `tokwiz update` does) must preserve portable mode!
         (self.root / "CLAUDE.md").write_text("# Custom\nTokWiz Protocol (old rule line)\n", encoding="utf-8")

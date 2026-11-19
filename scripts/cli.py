@@ -207,11 +207,13 @@ def _cmd_init(argv: List[str]) -> int:
         pre_prompt_cmd = "tokwiz hook pre-prompt-predict.py"
         pre_tool_cmd = "tokwiz hook pre-tool-guard.py"
         post_turn_cmd = "tokwiz hook post-turn-record.py"
+        session_start_cmd = "tokwiz hook session-start-resume.py"
         mcp_base_cmd = ["tokwiz", "mcp", "--root", "."]
     else:
         pre_prompt_cmd = f"python3 {_REPO_ROOT / 'hooks' / 'pre-prompt-predict.py'}"
         pre_tool_cmd = f"python3 {_REPO_ROOT / 'hooks' / 'pre-tool-guard.py'}"
         post_turn_cmd = f"python3 {_REPO_ROOT / 'hooks' / 'post-turn-record.py'}"
+        session_start_cmd = f"python3 {_REPO_ROOT / 'hooks' / 'session-start-resume.py'}"
         mcp_base_cmd = [sys.executable, str(_REPO_ROOT / "scripts" / "mcp-server.py"), "--root", str(base_dir)]
 
     rule_line = (
@@ -255,6 +257,11 @@ def _cmd_init(argv: List[str]) -> int:
                 hooks_cfg.get("Stop"),
                 {"matcher": ".*", "hooks": [{"type": "command", "command": post_turn_cmd}]},
                 "post-turn-record.py",
+            )
+            hooks_cfg["SessionStart"] = _merge_hook_list(
+                hooks_cfg.get("SessionStart"),
+                {"matcher": "clear|compact", "hooks": [{"type": "command", "command": session_start_cmd}]},
+                "session-start-resume.py",
             )
         settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
         _ensure_line_in_file(
@@ -402,7 +409,7 @@ def _remove_tokwiz_hooks_from_file(path: Path) -> bool:
         return False
 
     changed = False
-    markers = ("pre-prompt-predict.py", "pre-tool-guard.py", "post-turn-record.py")
+    markers = ("pre-prompt-predict.py", "pre-tool-guard.py", "post-turn-record.py", "session-start-resume.py")
     for event_name in list(hooks.keys()):
         entries = hooks.get(event_name)
         if not isinstance(entries, list):
@@ -572,6 +579,9 @@ def _cmd_hook(argv: List[str]) -> int:
         "post-turn": "post-turn-record.py",
         "post-turn-record": "post-turn-record.py",
         "post-turn-record.py": "post-turn-record.py",
+        "session-start": "session-start-resume.py",
+        "session-start-resume": "session-start-resume.py",
+        "session-start-resume.py": "session-start-resume.py",
     }
     script_name = mapping.get(hook_arg)
     if not script_name:

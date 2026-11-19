@@ -32,6 +32,17 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 hooks/session-start-resume.py"
+          }
+        ]
+      }
     ]
   }
 }
