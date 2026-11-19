@@ -365,6 +365,7 @@ class TelemetryStore:
                     "tokens_per_step": 0,
                     "recommendation": "Healthy (<40k/step) · Auto-checkpoint ready",
                 },
+                "burn_diagnostics": [],
             }
 
         tot_f_tok = sum(int(t["forecast_total_tokens"]) for t in turns)
@@ -428,7 +429,13 @@ class TelemetryStore:
         }
 
         last_turn = turns[-1]
-        latest_tok_per_step = int(last_turn["real_input_tokens"]) // max(1, int(last_turn["real_steps"]))
+        last_in = int(last_turn["real_input_tokens"])
+        last_cached = int(last_turn["real_cached_input_tokens"])
+        last_total = int(last_turn["real_total_tokens"])
+        last_out = int(last_turn["real_output_tokens"]) + int(last_turn["real_reasoning_tokens"])
+        # Handle both new rows (real_input_tokens includes cached) and legacy rows (cached stored separately)
+        last_effective_ctx_total = max(last_in, last_total - last_out, last_in + (last_cached if last_total > last_in + last_out else 0))
+        latest_tok_per_step = last_effective_ctx_total // max(1, int(last_turn["real_steps"]))
         if latest_tok_per_step > 100_000:
             ctx_status = "BLOATED"
             ctx_rec = "Bloated (>100k/step) — Run /clear + tokwiz_resume"
@@ -438,6 +445,101 @@ class TelemetryStore:
         else:
             ctx_status = "HEALTHY"
             ctx_rec = "Healthy (<40k/step) · Auto-checkpoint ready"
+
+        # Compute deterministic Token Burn Diagnostics & Manual Action Plan
+        burn_diagnostics: List[Dict[str, object]] = []
+        extra_loops_cnt = int(variance_counts.get("EXTRA_TOOL_LOOPS", 0))
+        cache_miss_cnt = int(variance_counts.get("CACHE_MISS_DRIFT", 0))
+        unbounded_cnt = int(variance_counts.get("UNBOUNDED_TOOL_OUTPUT", 0))
+
+        # 1. Heavy Session Prefix / Context Bloat
+        cached_share_pct = round((tot_cached / max(1, tot_r_tok)) * 100.0, 1)
+        if latest_tok_per_step >= 40_000 or (cached_share_pct >= 75.0 and tot_r_tok >= 250_000):
+            sev = "HIGH" if (latest_tok_per_step > 100_000 or tot_r_tok >= 1_000_000) else "MEDIUM"
+            burn_diagnostics.append(
+                {
+                    "id": "session_prefix_bloat",
+                    "severity": sev,
+                    "title": f"Heavy Session Prefix & Context Re-Reads ({latest_tok_per_step // 1000}k tok/step · {cached_share_pct}% cached)",
+                    "why": (
+                        f"{tot_cached:,} of {tot_r_tok:,} raw tokens ({cached_share_pct}%) are repeated KV-cached context "
+                        f"(conversation history, system tools, and MCP schemas) re-sent on every tool step."
+                    ),
+                    "steps": [
+                        "Run `/clear` between unrelated stories or PRs, then ask the agent to call `tokwiz_resume` (<200 tokens) instead of carrying 100k+ old messages.",
+                        "Run `/mcp` in your IDE/CLI and disable unused MCP servers (e.g., Google Drive, Figma, Docs) when coding — unused servers inject 20k–60k tool schema tokens on every step.",
+                    ],
+                }
+            )
+
+        # 2. Excessive Tool Loops
+        if extra_loops_cnt >= 2 or (total_turns >= 3 and (extra_loops_cnt / total_turns) >= 0.4):
+            loop_pct = round((extra_loops_cnt / max(1, total_turns)) * 100.0)
+            burn_diagnostics.append(
+                {
+                    "id": "extra_tool_loops",
+                    "severity": "HIGH" if loop_pct >= 50 else "MEDIUM",
+                    "title": f"Excessive Sequential Tool Loops ({extra_loops_cnt}/{total_turns} turns · {loop_pct}%)",
+                    "why": (
+                        f"{extra_loops_cnt} of {total_turns} turns triggered `EXTRA_TOOL_LOOPS`. "
+                        "Each extra search/read step re-sends your entire session prefix, multiplying total token burn."
+                    ),
+                    "steps": [
+                        "Scope prompts to 1 story or 1 module per turn instead of broad multi-story/epic prompts (`next 2 stories`, `complete the epic`).",
+                        "Mention exact target files/symbols or run `tokwiz optimize \"<prompt>\"` so the agent jumps straight to `file:Lstart-Lend` on Step 1.",
+                    ],
+                }
+            )
+
+        # 3. Expensive Model Used on Routine Profile A/B Turns
+        opus_ab_turns = [
+            t for t in turns
+            if any(k in str(t.get("model_id", "")).lower() for k in ("opus", "o3"))
+            and str(t.get("profile_code", "")) in ("A", "B")
+        ]
+        if opus_ab_turns:
+            ab_spend = sum(float(t.get("real_cost_usd", 0.0)) for t in opus_ab_turns)
+            burn_diagnostics.append(
+                {
+                    "id": "model_routing",
+                    "severity": "HIGH" if ab_spend >= 1.0 else "MEDIUM",
+                    "title": f"Premium Model Used on {len(opus_ab_turns)} Simple Profile A/B Turn(s) (${ab_spend:.2f} spent)",
+                    "why": (
+                        f"A top-tier reasoning model ({opus_ab_turns[-1].get('model_id')}) ran on routine Profile A/B prompts "
+                        f"(Q&A, git/PR ops, or single-file edits) where Sonnet/Flash costs ~80% less."
+                    ),
+                    "steps": [
+                        "Switch to Sonnet or Flash for git branches, PR merges, test fixes, and single-file edits.",
+                        "Reserve Opus / o3 for complex multi-file architecture or deep debugging.",
+                    ],
+                }
+            )
+
+        # 4. Cache Miss Drift or Unbounded Tool Output
+        if cache_miss_cnt > 0:
+            burn_diagnostics.append(
+                {
+                    "id": "cache_miss_drift",
+                    "severity": "MEDIUM",
+                    "title": f"KV-Cache Invalidation Detected ({cache_miss_cnt} turn(s))",
+                    "why": "Cache hit rate dropped below 45%, billing repeated context at full uncached input rates (up to 10× pricier).",
+                    "steps": [
+                        "Avoid editing `CLAUDE.md`, `AGENTS.md`, or MCP tool lists mid-session — prefix mutations invalidate the KV cache.",
+                    ],
+                }
+            )
+        if unbounded_cnt > 0:
+            burn_diagnostics.append(
+                {
+                    "id": "unbounded_tool_output",
+                    "severity": "MEDIUM",
+                    "title": f"Oversized Tool Outputs Entered Context ({unbounded_cnt} turn(s))",
+                    "why": "Large raw test logs, diffs, or full file dumps inflated tool-output tokens.",
+                    "steps": [
+                        "Use `tokwiz test`, `tokwiz diff-slice`, or `tokwiz filter -- <cmd>` instead of unfiltered test or `git diff` outputs.",
+                    ],
+                }
+            )
 
         return {
             "total_turns": total_turns,
@@ -471,6 +573,7 @@ class TelemetryStore:
                 "tokens_per_step": latest_tok_per_step,
                 "recommendation": ctx_rec,
             },
+            "burn_diagnostics": burn_diagnostics,
         }
 
 

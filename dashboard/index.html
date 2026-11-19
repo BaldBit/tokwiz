@@ -185,6 +185,60 @@
       border-radius: 999px;
       transition: width 0.25s ease, background 0.25s ease;
     }
+    .diag-section {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+      box-shadow: var(--shadow-sm);
+    }
+    .diag-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .diag-header h2 { font-size: 0.96rem; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    .diag-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 12px;
+    }
+    .diag-card {
+      background: var(--card-alt);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--amber);
+      border-radius: 9px;
+      padding: 12px 14px;
+    }
+    .diag-card.HIGH { border-left-color: var(--rose); }
+    .diag-card.MEDIUM { border-left-color: var(--amber); }
+    .diag-card.OK { border-left-color: var(--emerald); }
+    .diag-title {
+      font-size: 0.84rem;
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 5px;
+    }
+    .diag-sev {
+      font-size: 0.66rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+    .diag-sev.HIGH { background: rgba(244, 63, 94, 0.16); color: var(--rose); }
+    .diag-sev.MEDIUM { background: rgba(245, 158, 11, 0.16); color: var(--amber); }
+    .diag-sev.OK { background: rgba(16, 185, 129, 0.16); color: var(--emerald); }
+    .diag-why { font-size: 0.78rem; color: var(--muted); line-height: 1.45; margin-bottom: 8px; }
+    .diag-steps { margin: 0; padding-left: 16px; display: grid; gap: 4px; font-size: 0.78rem; color: var(--text); line-height: 1.45; }
+    .diag-steps code { color: var(--accent); background: var(--surface-code); padding: 1px 4px; border-radius: 4px; border: 1px solid var(--border); font-size: 0.73rem; }
 
     /* Project Graph Visualizer Section */
     .graph-section {
@@ -924,6 +978,15 @@
         </div>
       </aside>
     </div>
+  </section>
+
+  <!-- Token Burn Diagnostics & Actionable Playbook -->
+  <section class="diag-section" id="burnDiagnosticsSection" aria-label="Token Burn Diagnostics" style="display:none;">
+    <div class="diag-header">
+      <h2>🩺 Why Tokens Are Burning &amp; Manual Action Plan <span class="info-tip" tabindex="0" data-tip="Analyzes your real turns (cached prefix size, EXTRA_TOOL_LOOPS, model tier on Profile A/B tasks, cache misses) and lists exact manual actions you can take right now to cut spend.">ⓘ</span></h2>
+      <span class="chart-subtitle" id="burnDiagnosticsSummary">Deterministic root-cause breakdown</span>
+    </div>
+    <div class="diag-grid" id="burnDiagnosticsGrid"></div>
   </section>
 
   <!-- Sleek Chart.js Analytics Charts with Full X & Y Axes -->
@@ -2442,12 +2505,56 @@
       });
       const chartTurns = [...(data.turns || []), ...pendingChartItems];
 
+      renderBurnDiagnostics(data.burn_diagnostics || [], turnsCount);
       renderCostVarianceChart(chartTurns);
       renderTokensTimelineChart(chartTurns);
       renderPhaseBreakdownChart(data.phase_breakdown || {});
       renderModelCostChart(data.model_breakdown || {});
       renderAbProofSection(data.ab_comparison || null);
       renderAuditTable(data.turns || [], pendingForecasts);
+    }
+
+    function renderBurnDiagnostics(items, turnsCount) {
+      const sec = document.getElementById("burnDiagnosticsSection");
+      const grid = document.getElementById("burnDiagnosticsGrid");
+      const sumEl = document.getElementById("burnDiagnosticsSummary");
+      if (!sec || !grid) return;
+      grid.replaceChildren();
+      if (!turnsCount) {
+        sec.style.display = "none";
+        return;
+      }
+      sec.style.display = "block";
+      const esc = (s) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/`([^`]+)`/g, "<code>$1</code>");
+      if (!Array.isArray(items) || items.length === 0) {
+        if (sumEl) sumEl.textContent = "No major burn drivers detected";
+        const card = document.createElement("div");
+        card.className = "diag-card OK";
+        card.innerHTML = `
+          <div class="diag-title"><span class="diag-sev OK">HEALTHY</span>Token Burn Is Under Control</div>
+          <div class="diag-why">Low tool-loop counts, compact per-step session prefix, and strong KV-cache reuse across recent turns.</div>
+        `;
+        grid.appendChild(card);
+        return;
+      }
+      const highCnt = items.filter(i => i.severity === "HIGH").length;
+      if (sumEl) {
+        sumEl.textContent = `${items.length} burn driver${items.length > 1 ? "s" : ""} detected${highCnt ? ` (${highCnt} high impact)` : ""}`;
+      }
+      items.forEach(item => {
+        const sev = String(item.severity || "MEDIUM");
+        const stepsHtml = (Array.isArray(item.steps) ? item.steps : [])
+          .map(st => `<li>${esc(st)}</li>`)
+          .join("");
+        const card = document.createElement("div");
+        card.className = `diag-card ${sev}`;
+        card.innerHTML = `
+          <div class="diag-title"><span class="diag-sev ${sev}">${sev}</span>${esc(item.title)}</div>
+          <div class="diag-why">${esc(item.why)}</div>
+          <ul class="diag-steps">${stepsHtml}</ul>
+        `;
+        grid.appendChild(card);
+      });
     }
 
     function renderAbProofSection(abData) {
