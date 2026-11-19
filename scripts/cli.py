@@ -48,12 +48,30 @@ def _load_script_module(name: str, filename: str):
     return mod
 
 
-def _ensure_line_in_file(file_path: Path, line_to_ensure: str) -> None:
+def _ensure_line_in_file(
+    file_path: Path,
+    line_to_ensure: str,
+    replace_prefixes: Tuple[str, ...] = (),
+) -> None:
     file_path.parent.mkdir(parents=True, exist_ok=True)
     if file_path.exists():
         content = file_path.read_text(encoding="utf-8", errors="replace")
         if line_to_ensure in content:
             return
+        if replace_prefixes:
+            raw_lines = content.splitlines()
+            updated_lines: List[str] = []
+            replaced = False
+            for ln in raw_lines:
+                if any(p in ln for p in replace_prefixes):
+                    if not replaced:
+                        updated_lines.append(line_to_ensure)
+                        replaced = True
+                else:
+                    updated_lines.append(ln)
+            if replaced:
+                file_path.write_text("\n".join(updated_lines) + "\n", encoding="utf-8")
+                return
         sep = "" if content.endswith("\n") or not content else "\n"
         file_path.write_text(f"{content}{sep}{line_to_ensure}\n", encoding="utf-8")
     else:
@@ -198,7 +216,9 @@ def _cmd_init(argv: List[str]) -> int:
 
     rule_line = (
         "If `.tokwiz/` or `.agents/skills/tokwiz/SKILL.md` exists, follow `.agents/skills/tokwiz/SKILL.md` "
-        "for token optimization: query `tokwiz graph` before grep/find, skeletonize files >150 lines, and never read lockfiles."
+        "for token & context optimization: use `tokwiz map` (`tokwiz_map`) for repo overview, query `tokwiz graph` / `tokwiz_slice` before grep/find, "
+        "skeletonize files >150 lines, use `tokwiz diff-slice` (`tokwiz_diff_slice`) + `tokwiz test` (`tokwiz_test`) for diff & test context, "
+        "reload state after `/clear` via `tokwiz resume` (`tokwiz_resume`), and never read lockfiles."
     )
 
     configured: List[str] = []
@@ -240,10 +260,12 @@ def _cmd_init(argv: List[str]) -> int:
         _ensure_line_in_file(
             base_dir / "CLAUDE.md",
             "TokWiz Protocol (if `mcp__tokwiz__*` or `.tokwiz/` is available; do NOT `cat SKILL.md`): "
-            "1) Call `mcp__tokwiz__tokwiz_slice` (supports `symbols: [...]` batching) / `tokwiz_trace` / `tokwiz_graph_query` BEFORE `grep`/`find`/`Read`; "
+            "1) Call `mcp__tokwiz__tokwiz_map` for repo overview or `tokwiz_slice` (supports `symbols: [...]` batching) / `tokwiz_trace` / `tokwiz_graph_query` BEFORE `grep`/`find`/`Read`; "
             "2) Call `mcp__tokwiz__tokwiz_skeleton` before ranged reads on >150L files; "
-            "3) Call `mcp__tokwiz__tokwiz_test` instead of full `unittest`/`pytest`; "
-            "4) Skip lockfiles/`node_modules/`/`dist/`.",
+            "3) Call `mcp__tokwiz__tokwiz_diff_slice` for diff AST/caller context and `mcp__tokwiz__tokwiz_test` for impacted tests; "
+            "4) Call `mcp__tokwiz__tokwiz_resume` after `/clear` or `/compact` to reload `<200`-token working memory; "
+            "5) Skip lockfiles/`node_modules/`/`dist/`.",
+            replace_prefixes=("TokWiz Protocol (",),
         )
         _register_mcp_server(base_dir / ".mcp.json", mcp_base_cmd)
         configured.append("claude")
@@ -287,7 +309,7 @@ def _cmd_init(argv: List[str]) -> int:
                 "post-turn-record.py",
             )
         hooks_json_path.write_text(json.dumps(hooks_payload, indent=2) + "\n", encoding="utf-8")
-        _ensure_line_in_file(base_dir / "GEMINI.md", rule_line)
+        _ensure_line_in_file(base_dir / "GEMINI.md", rule_line, replace_prefixes=(".agents/skills/tokwiz/SKILL.md",))
         _register_mcp_server(base_dir / ".agents" / "mcp.json", mcp_base_cmd)
         configured.append("gemini")
 
@@ -296,7 +318,7 @@ def _cmd_init(argv: List[str]) -> int:
         codex_skill = base_dir / ".agents" / "skills" / "tokwiz" / "SKILL.md"
         codex_skill.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(skill_src, codex_skill)
-        _ensure_line_in_file(base_dir / "AGENTS.md", rule_line)
+        _ensure_line_in_file(base_dir / "AGENTS.md", rule_line, replace_prefixes=(".agents/skills/tokwiz/SKILL.md",))
         configured.append("codex")
 
     # 5. Cursor / GitHub Copilot setup
@@ -304,8 +326,12 @@ def _cmd_init(argv: List[str]) -> int:
         cursor_skill = base_dir / ".agents" / "skills" / "tokwiz" / "SKILL.md"
         cursor_skill.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(skill_src, cursor_skill)
-        _ensure_line_in_file(base_dir / ".cursorrules", rule_line)
-        _ensure_line_in_file(base_dir / ".github" / "copilot-instructions.md", rule_line)
+        _ensure_line_in_file(base_dir / ".cursorrules", rule_line, replace_prefixes=(".agents/skills/tokwiz/SKILL.md",))
+        _ensure_line_in_file(
+            base_dir / ".github" / "copilot-instructions.md",
+            rule_line,
+            replace_prefixes=(".agents/skills/tokwiz/SKILL.md",),
+        )
         _register_mcp_server(base_dir / ".cursor" / "mcp.json", mcp_base_cmd)
         configured.append("cursor")
 

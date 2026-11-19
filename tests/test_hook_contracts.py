@@ -206,12 +206,28 @@ class TestHookContractsAndResilience(unittest.TestCase):
         self.assertEqual(cli_mod.main(["hook", "pre-tool-guard.py"]), 0)
 
         # Re-running `tokwiz init` WITHOUT `--portable` (as `tokwiz update` does) must preserve portable mode!
+        (self.root / "CLAUDE.md").write_text("# Custom\nTokWiz Protocol (old rule line)\n", encoding="utf-8")
+        (self.root / "AGENTS.md").write_text("# Custom\nIf `.tokwiz/` or `.agents/skills/tokwiz/SKILL.md` old line\n", encoding="utf-8")
         self.assertEqual(cli_mod.main(["init", "--agent", "all", "--root", str(self.root)]), 0)
         after_reinit_settings = (self.root / ".claude" / "settings.json").read_text(encoding="utf-8")
         after_reinit_mcp = (self.root / ".mcp.json").read_text(encoding="utf-8")
         self.assertIn("tokwiz hook pre-tool-guard.py", after_reinit_settings)
         self.assertNotIn(str(REPO_ROOT), after_reinit_settings)
         self.assertNotIn(str(self.root), after_reinit_mcp)
+
+        for rule_file in (
+            self.root / "CLAUDE.md",
+            self.root / "AGENTS.md",
+            self.root / "GEMINI.md",
+            self.root / ".cursorrules",
+            self.root / ".agents" / "rules" / "tokwiz.md",
+        ):
+            rule_txt = rule_file.read_text(encoding="utf-8")
+            self.assertIn("tokwiz_map", rule_txt)
+            self.assertIn("tokwiz_diff_slice", rule_txt)
+            self.assertIn("tokwiz_resume", rule_txt)
+            self.assertNotIn("old rule line", rule_txt)
+            self.assertNotIn("old line", rule_txt)
 
 
 if __name__ == "__main__":
