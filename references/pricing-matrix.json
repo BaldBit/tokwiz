@@ -38,6 +38,16 @@
       "reasoning_multiplier": 1.40,
       "cache_discount_ratio": 0.90
     },
+    "claude-opus-5-5": {
+      "provider": "claude",
+      "display_name": "Claude Opus 5.5",
+      "input_per_1m": 15.00,
+      "cached_input_per_1m": 1.50,
+      "cache_write_per_1m": 18.75,
+      "output_per_1m": 75.00,
+      "reasoning_multiplier": 1.40,
+      "cache_discount_ratio": 0.90
+    },
     "claude-3-5-haiku": {
       "provider": "claude",
       "display_name": "Claude 3.5 Haiku",

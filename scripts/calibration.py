@@ -143,19 +143,39 @@ def parse_usage_payload(payload: Dict[str, object]) -> ActualUsage:
     )
 
 
+def _resolve_model_pricing_id(
+    model_id: str,
+    agent_host: str,
+    pricing_data: Dict[str, object],
+) -> str:
+    models: Dict[str, Dict[str, object]] = pricing_data.get("models", {})  # type: ignore[assignment]
+    defaults: Dict[str, str] = pricing_data.get("default_models", {})  # type: ignore[assignment]
+    if model_id in models:
+        return model_id
+    low = (model_id or "").lower()
+    if "opus" in low and "claude-opus-4" in models:
+        return "claude-opus-4"
+    if "haiku" in low and "claude-3-5-haiku" in models:
+        return "claude-3-5-haiku"
+    if "flash" in low and "gemini-2.5-flash" in models:
+        return "gemini-2.5-flash"
+    if "gemini" in low and "gemini-2.5-pro" in models:
+        return "gemini-2.5-pro"
+    if any(k in low for k in ("gpt", "o4", "o3", "codex")) and "o4-mini" in models:
+        return "o4-mini"
+    return defaults.get(agent_host, "claude-sonnet-4")
+
+
 def compute_real_cost_usd(
     usage: ActualUsage,
     pricing: Optional[Dict[str, object]] = None,
 ) -> float:
     pricing_data = pricing or load_pricing_matrix()
     models: Dict[str, Dict[str, object]] = pricing_data.get("models", {})  # type: ignore[assignment]
-    defaults: Dict[str, str] = pricing_data.get("default_models", {})  # type: ignore[assignment]
     per_unit = float(pricing_data.get("per_tokens", 1_000_000))
 
-    m_cfg = models.get(usage.model_id)
-    if not m_cfg:
-        fallback_id = defaults.get(usage.agent_host, "claude-sonnet-4")
-        m_cfg = models.get(fallback_id, list(models.values())[0])
+    resolved_id = _resolve_model_pricing_id(usage.model_id, usage.agent_host, pricing_data)
+    m_cfg = models.get(resolved_id, list(models.values())[0])
 
     in_rate = float(m_cfg["input_per_1m"]) / per_unit
     cached_rate = float(m_cfg["cached_input_per_1m"]) / per_unit
@@ -249,15 +269,10 @@ class CalibrationEngine:
 
         # Look up forecasted cost for the active model
         costs_map = forecast.get("costs", {})
+        resolved_pricing_id = _resolve_model_pricing_id(usage.model_id, usage.agent_host, self.pricing)
         model_cost_info = costs_map.get(usage.model_id) if isinstance(costs_map, dict) else None
         if model_cost_info is None and isinstance(costs_map, dict):
-            low_m = usage.model_id.lower()
-            fallback_key = (
-                "o4-mini"
-                if any(k in low_m for k in ("gpt", "o4", "o3", "codex"))
-                else ("gemini-2.5-pro" if "gemini" in low_m else "claude-sonnet-4")
-            )
-            model_cost_info = costs_map.get(fallback_key)
+            model_cost_info = costs_map.get(resolved_pricing_id) or costs_map.get("claude-sonnet-4")
         if isinstance(model_cost_info, dict):
             base_f_cost = float(model_cost_info.get("cached_cost_usd") or model_cost_info.get("uncached_cost_usd") or 0.0)
             unopt_cost = float(model_cost_info.get("unoptimized_cost_usd") or base_f_cost * 2.5)
@@ -292,7 +307,7 @@ class CalibrationEngine:
 
         models_cfg: Dict[str, Dict[str, object]] = self.pricing.get("models", {})  # type: ignore[assignment]
         per_unit = float(self.pricing.get("per_tokens", 1_000_000))
-        m_cfg = models_cfg.get(usage.model_id) or models_cfg.get("claude-sonnet-4") or {}
+        m_cfg = models_cfg.get(resolved_pricing_id) or models_cfg.get("claude-sonnet-4") or {}
         in_rate = float(m_cfg.get("input_per_1m", 3.0)) / per_unit
         cached_rate = float(m_cfg.get("cached_input_per_1m", 0.3)) / per_unit
         blended_in_rate = (0.35 * in_rate) + (0.65 * cached_rate)
