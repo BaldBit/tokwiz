@@ -11,6 +11,7 @@ import argparse
 import contextlib
 import json
 import os
+import re
 import sqlite3
 import sys
 import time
@@ -238,7 +239,11 @@ class TelemetryStore:
                 (cutoff,),
             ).fetchall()
 
-        turns = [dict(r) for r in rows]
+        def _is_xml_system_prompt(raw_p: object) -> bool:
+            s = str(raw_p or "").strip()
+            return bool(re.match(r"^<[a-zA-Z_][a-zA-Z0-9_:-]*\b[^>]*>", s))
+
+        turns = [dict(r) for r in rows if not _is_xml_system_prompt(r["prompt"])]
         for t in turns:
             try:
                 t["variance_tags"] = json.loads(str(t["variance_tags"]))
@@ -268,6 +273,8 @@ class TelemetryStore:
                     try:
                         f_obj = json.loads(line)
                         if installed_at is not None and float(f_obj.get("timestamp", 0.0)) < installed_at:
+                            continue
+                        if _is_xml_system_prompt(f_obj.get("prompt")):
                             continue
                         forecasts_list.append(f_obj)
                     except Exception:
