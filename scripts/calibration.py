@@ -47,6 +47,7 @@ class ActualUsage:
     tool_output_tokens: int
     reasoning_tokens: int
     output_tokens: int
+    last_step_context_tokens: int = 0
 
     @property
     def uncached_tokens(self) -> int:
@@ -87,6 +88,7 @@ def parse_usage_payload(payload: Dict[str, object]) -> ActualUsage:
         uncached_in = max(0, total_in - cached_clamped)
         tool_tok = int(usage.get("tool_output_tokens", int(uncached_in * 0.35)))
         steps = int(payload.get("real_steps", usage.get("tool_steps", 3)))
+        last_step_ctx = int(payload.get("last_step_context_tokens", usage.get("last_step_context_tokens", 0)) or 0)
         return ActualUsage(
             agent_host=agent_host,
             model_id=model_id,
@@ -96,6 +98,7 @@ def parse_usage_payload(payload: Dict[str, object]) -> ActualUsage:
             tool_output_tokens=tool_tok,
             reasoning_tokens=reason_tok,
             output_tokens=out_tok,
+            last_step_context_tokens=last_step_ctx,
         )
 
     # 2. OpenAI Codex CLI style (`prompt_tokens`, `completion_tokens`, `prompt_tokens_details`)
@@ -111,6 +114,7 @@ def parse_usage_payload(payload: Dict[str, object]) -> ActualUsage:
         out_tok = max(0, comp_tok - reason_tok) if comp_tok >= reason_tok else comp_tok
         tool_tok = int(usage.get("tool_output_tokens", int(total_in * 0.35)))
         steps = int(payload.get("real_steps", usage.get("tool_steps", 3)))
+        last_step_ctx = int(payload.get("last_step_context_tokens", usage.get("last_step_context_tokens", 0)) or 0)
         return ActualUsage(
             agent_host=agent_host,
             model_id=model_id,
@@ -120,6 +124,7 @@ def parse_usage_payload(payload: Dict[str, object]) -> ActualUsage:
             tool_output_tokens=tool_tok,
             reasoning_tokens=reason_tok,
             output_tokens=out_tok,
+            last_step_context_tokens=last_step_ctx,
         )
 
     # 3. Gemini CLI / Antigravity style (`promptTokenCount`, `cachedContentTokenCount`, `candidatesTokenCount`, `thoughtsTokenCount`)
@@ -131,6 +136,7 @@ def parse_usage_payload(payload: Dict[str, object]) -> ActualUsage:
     reason_tok = int(usage.get("thoughtsTokenCount", usage.get("reasoning_tokens", 0)))
     tool_tok = int(usage.get("tool_output_tokens", int(total_in * 0.35)))
     steps = int(payload.get("real_steps", usage.get("tool_steps", 3)))
+    last_step_ctx = int(payload.get("last_step_context_tokens", usage.get("last_step_context_tokens", 0)) or 0)
     return ActualUsage(
         agent_host=agent_host,
         model_id=model_id,
@@ -140,6 +146,7 @@ def parse_usage_payload(payload: Dict[str, object]) -> ActualUsage:
         tool_output_tokens=tool_tok,
         reasoning_tokens=reason_tok,
         output_tokens=out_tok,
+        last_step_context_tokens=last_step_ctx,
     )
 
 
@@ -217,7 +224,8 @@ def attribute_variance_causes(
     if usage.tool_output_tokens > f_tool * 1.5 and (usage.tool_output_tokens - f_tool) > 300 and effective_total > int(f_total * 1.15):
         tags.append("UNBOUNDED_TOOL_OUTPUT")
 
-    if (usage.input_tokens // max(1, usage.real_steps)) > 100_000:
+    ctx_per_step = usage.last_step_context_tokens or (usage.input_tokens // max(1, usage.real_steps))
+    if ctx_per_step > 100_000:
         tags.append("CONTEXT_BLOAT")
 
     if not tags and effective_total > int(f_total * 1.25):
@@ -381,6 +389,7 @@ class CalibrationEngine:
             "ab_baseline_tokens": ab_base_tok,
             "ab_baseline_steps": ab_base_steps,
             "ab_baseline_cost_usd": ab_base_cost,
+            "last_step_context_tokens": usage.last_step_context_tokens,
         }
 
         self.telemetry.record_turn(record)
@@ -407,22 +416,28 @@ class CalibrationEngine:
         reason_map: Dict[str, float] = weights.setdefault("reasoning_multipliers", {})  # type: ignore[assignment]
         scale_map: Dict[str, float] = weights.setdefault("cost_scale_factors", {})  # type: ignore[assignment]
 
-        obs_step_ratio = max(0.3, min(3.0, usage.real_steps / f_steps))
         prev_step = float(step_map.get(p_code, 1.0))
-        step_map[p_code] = round((1.0 - alpha) * prev_step + alpha * obs_step_ratio, 4)
+        target_step = max(0.3, min(12.0, prev_step * (usage.real_steps / f_steps)))
+        step_map[p_code] = round((1.0 - alpha) * prev_step + alpha * target_step, 4)
 
-        obs_tool_ratio = max(0.3, min(3.0, usage.tool_output_tokens / f_tool))
         prev_tool = float(tool_map.get(p_code, 1.0))
-        tool_map[p_code] = round((1.0 - alpha) * prev_tool + alpha * obs_tool_ratio, 4)
+        target_tool = max(0.3, min(4.0, prev_tool * (usage.tool_output_tokens / f_tool)))
+        tool_map[p_code] = round((1.0 - alpha) * prev_tool + alpha * target_tool, 4)
 
-        obs_reason_ratio = max(0.3, min(3.0, usage.reasoning_tokens / f_reason))
         prev_reason = float(reason_map.get(p_code, 1.0))
-        reason_map[p_code] = round((1.0 - alpha) * prev_reason + alpha * obs_reason_ratio, 4)
+        target_reason = max(0.3, min(4.0, prev_reason * (usage.reasoning_tokens / f_reason)))
+        reason_map[p_code] = round((1.0 - alpha) * prev_reason + alpha * target_reason, 4)
 
         if base_f_cost > 0 and r_cost > 0:
-            obs_cost_ratio = max(0.2, min(5.0, r_cost / base_f_cost))
-            prev_scale = float(scale_map.get(scale_key, 1.0))
-            scale_map[scale_key] = round((1.0 - alpha) * prev_scale + alpha * obs_cost_ratio, 4)
+            # Only absorb residual pricing/cache drift into cost_scale_factors when the forecast
+            # was already warm (context_tokens > 450) and step count was reasonably close,
+            # so cold-start context/step misses are not double-counted alongside step_map.
+            f_ctx = int(forecast.get("context_tokens", 0))
+            step_err_ratio = abs(usage.real_steps - f_steps) / max(1, f_steps)
+            if f_ctx > 450 and step_err_ratio <= 0.6:
+                prev_scale = float(scale_map.get(scale_key, 1.0))
+                target_scale = max(0.5, min(2.0, prev_scale * (r_cost / base_f_cost)))
+                scale_map[scale_key] = round((1.0 - alpha) * prev_scale + alpha * target_scale, 4)
 
         weights["turns_calibrated"] = int(weights.get("turns_calibrated", 0)) + 1
         self.save_weights(weights)

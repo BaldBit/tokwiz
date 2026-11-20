@@ -673,6 +673,7 @@ def _parse_claude_transcript_turns(
                     "agent_host": "claude",
                     "model_id": str(cur.get("model") or "claude-sonnet-4"),
                     "real_steps": max(1, int(cur["steps"])),
+                    "last_step_context_tokens": int(cur.get("last_step_ctx") or 0),
                     "telemetry_source": "TRANSCRIPT_MEASURED",
                     "transcript_path": str(transcript_path),
                     "receipts": receipts,
@@ -747,6 +748,7 @@ def _parse_claude_transcript_turns(
                     "cache_read_tok": 0,
                     "output_tok": 0,
                     "tool_tok": 0,
+                    "last_step_ctx": 0,
                     "model": "claude-sonnet-4",
                     "tool_counts": {"read": 0, "ranged_read": 0, "graph": 0, "grep": 0, "cmd": 0, "edit": 0},
                     "tool_events": [],
@@ -758,14 +760,16 @@ def _parse_claude_transcript_turns(
                 cur["model"] = str(msg["model"])
             usage = msg.get("usage")
             if isinstance(usage, dict):
-                cur["input_tok"] = int(cur["input_tok"]) + int(usage.get("input_tokens") or 0)
-                cur["cache_create_tok"] = int(cur["cache_create_tok"]) + int(
-                    usage.get("cache_creation_input_tokens") or 0
-                )
-                cur["cache_read_tok"] = int(cur["cache_read_tok"]) + int(
-                    usage.get("cache_read_input_tokens") or 0
-                )
+                step_in = int(usage.get("input_tokens") or 0)
+                step_cc = int(usage.get("cache_creation_input_tokens") or 0)
+                step_cr = int(usage.get("cache_read_input_tokens") or 0)
+                cur["input_tok"] = int(cur["input_tok"]) + step_in
+                cur["cache_create_tok"] = int(cur["cache_create_tok"]) + step_cc
+                cur["cache_read_tok"] = int(cur["cache_read_tok"]) + step_cr
                 cur["output_tok"] = int(cur["output_tok"]) + int(usage.get("output_tokens") or 0)
+                step_ctx = step_in + step_cc + step_cr
+                if step_ctx > 0:
+                    cur["last_step_ctx"] = step_ctx
 
             if isinstance(content, list):
                 for blk in content:

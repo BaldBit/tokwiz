@@ -138,6 +138,58 @@ class TestTokenEstimator(unittest.TestCase):
         self.assertEqual(data["profile_code"], "C")
         self.assertIn("validateToken", data["matched_symbols"])
 
+    def test_heavy_session_continuation_forecast_converges_without_double_discount(self) -> None:
+        cal_mod = _load_module("calibration", "calibration.py")
+        engine = cal_mod.CalibrationEngine(root_dir=self.root)
+
+        # Simulate 4 heavy 70-step claude-opus-5-5 continuation turns (~169k ctx, 91% cached, ~$22-$25 real cost)
+        apes = []
+        for idx in range(4):
+            est = est_mod.TokenEstimator(root_dir=self.root)
+            prompt = (
+                "Refactor validateToken across callers"
+                if idx == 0
+                else ("please continue" if idx % 2 == 1 else "merged pr. continue with next stories")
+            )
+            res = est.estimate(prompt)
+            if idx >= 1:
+                self.assertNotEqual(res.profile_code, "A")
+                self.assertGreater(res.context_tokens, 100_000)
+                self.assertGreater(res.estimated_steps, 18)
+
+            rec = engine.reconcile_turn(
+                forecast={
+                    "forecast_id": res.forecast_id,
+                    "prompt": res.prompt,
+                    "profile_code": res.profile_code,
+                    "optimization_level": res.optimization_level,
+                    "estimated_steps": res.estimated_steps,
+                    "context_tokens": res.context_tokens,
+                    "prompt_tokens": res.prompt_tokens,
+                    "tool_loop_tokens": res.tool_loop_tokens,
+                    "reasoning_tokens": res.reasoning_tokens,
+                    "output_tokens": res.output_tokens,
+                    "total_tokens": res.total_tokens,
+                    "unoptimized_tokens": res.unoptimized_tokens,
+                    "costs": {k: vars(v) for k, v in res.costs.items()},
+                },
+                usage_payload={
+                    "agent_host": "claude",
+                    "model_id": "claude-opus-5-5",
+                    "real_steps": 70,
+                    "last_step_context_tokens": 169_100,
+                    "usage": {
+                        "input_tokens": 810_000,
+                        "cache_read_input_tokens": 8_190_000,
+                        "output_tokens": 35_000,
+                    },
+                },
+            )
+            apes.append(float(rec["ape_pct"]))
+
+        # By turn 4, forecast must converge well under 25% APE (previously stuck at ~97% APE)
+        self.assertLess(apes[-1], 25.0, f"Expected heavy-session forecast APE < 25%, got {apes}")
+
 
 if __name__ == "__main__":
     unittest.main()

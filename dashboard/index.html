@@ -2457,30 +2457,39 @@
           : "0 turns recorded in telemetry.db";
 
       const ch = data.context_health || {};
-      const tokPerStep = Number(ch.tokens_per_step || 0);
-      const chStatus = String(ch.status || (tokPerStep > 100000 ? "BLOATED" : tokPerStep >= 40000 ? "WARM" : "HEALTHY"));
+      const currentCtx = Number(ch.current_context_tokens || ch.tokens_per_step || 0);
+      const avgTokPerStep = Number(ch.avg_tokens_per_step || ch.tokens_per_step || 0);
+      const ctxLimit = Number(ch.context_window_limit || 200000);
+      const ctxPct = ch.context_pct !== undefined
+        ? Number(ch.context_pct)
+        : (currentCtx > 0 ? Math.round((currentCtx / Math.max(1, ctxLimit)) * 1000) / 10 : 0);
+      const chStatus = String(ch.status || (currentCtx > 100000 ? "BLOATED" : currentCtx >= 40000 ? "WARM" : "HEALTHY"));
       const ctxValEl = document.getElementById("kpiContextHealth");
       const ctxSubEl = document.getElementById("kpiContextSub");
       const ctxBarEl = document.getElementById("kpiContextBarFill");
       if (ctxValEl && ctxSubEl && ctxBarEl) {
-        const kStr = tokPerStep > 0 ? ` · ${(tokPerStep / 1000).toFixed(1)}k/step` : "";
-        const pct = tokPerStep > 0 ? Math.max(6, Math.min(100, Math.round((tokPerStep / 120000) * 100))) : 8;
-        ctxBarEl.style.width = `${pct}%`;
+        const limitLabel = ctxLimit >= 1000000 ? `${(ctxLimit / 1000000).toFixed(1)}M` : `${Math.round(ctxLimit / 1000)}k`;
+        const kStr = currentCtx > 0 ? ` · ${(currentCtx / 1000).toFixed(1)}k / ${limitLabel} (${Math.round(ctxPct)}%)` : "";
+        const avgNote = (avgTokPerStep > 0 && Math.abs(currentCtx - avgTokPerStep) >= 1000)
+          ? `Avg ${(avgTokPerStep / 1000).toFixed(1)}k/step · `
+          : "";
+        const barPct = currentCtx > 0 ? Math.max(6, Math.min(100, Math.max(Math.round(ctxPct), Math.round((currentCtx / 150000) * 100)))) : 8;
+        ctxBarEl.style.width = `${barPct}%`;
         if (chStatus === "BLOATED") {
           ctxValEl.textContent = `Bloated${kStr}`;
           ctxValEl.style.color = "var(--rose)";
           ctxBarEl.style.background = "var(--rose)";
-          ctxSubEl.textContent = ch.recommendation || "Bloated (>100k/step) — Run /clear + tokwiz_resume";
+          ctxSubEl.textContent = `${avgNote}${ch.recommendation || "Bloated (>100k ctx) — Run /clear + tokwiz_resume"}`;
         } else if (chStatus === "WARM") {
           ctxValEl.textContent = `Warm${kStr}`;
           ctxValEl.style.color = "var(--amber)";
           ctxBarEl.style.background = "var(--amber)";
-          ctxSubEl.textContent = ch.recommendation || "Warm (40k–100k/step) — Consider /clear + tokwiz_resume soon";
+          ctxSubEl.textContent = `${avgNote}${ch.recommendation || "Warm (40k–100k ctx) — Consider /clear + tokwiz_resume soon"}`;
         } else {
           ctxValEl.textContent = `Healthy${kStr}`;
           ctxValEl.style.color = "var(--emerald)";
           ctxBarEl.style.background = "var(--emerald)";
-          ctxSubEl.textContent = ch.recommendation || "Healthy (<40k/step) · Auto-checkpoint ready";
+          ctxSubEl.textContent = `${avgNote}${ch.recommendation || "Healthy (<40k ctx) · Auto-checkpoint ready"}`;
         }
       }
 

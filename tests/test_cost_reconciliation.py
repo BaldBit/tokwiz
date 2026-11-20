@@ -441,13 +441,79 @@ if (doc.getElementById("abProofSection").style.display !== "none") {
 if (doc.getElementById("kpiTurnsSub").textContent.includes("A/B")) {
   throw new Error("kpiTurnsSub leaked A/B text in normal mode");
 }
-ctx.renderDashboard({...payload, context_health: { status: "BLOATED", tokens_per_step: 130000, recommendation: "Bloated (>100k/step) — Run /clear + tokwiz_resume" }});
-if (!doc.getElementById("kpiContextHealth").textContent.includes("Bloated")) {
-  throw new Error("kpiContextHealth did not render Bloated state");
+ctx.renderDashboard({...payload, context_health: { status: "BLOATED", tokens_per_step: 169100, current_context_tokens: 169100, avg_tokens_per_step: 124600, context_window_limit: 1000000, context_pct: 16.9, recommendation: "Bloated (>100k ctx) — Run /clear + tokwiz_resume" }});
+if (!doc.getElementById("kpiContextHealth").textContent.includes("169.1k / 1.0M (17%)")) {
+  throw new Error("kpiContextHealth did not render exact /context parity: " + doc.getElementById("kpiContextHealth").textContent);
+}
+if (!doc.getElementById("kpiContextSub").textContent.includes("Avg 124.6k/step")) {
+  throw new Error("kpiContextSub did not render avg/step comparison: " + doc.getElementById("kpiContextSub").textContent);
 }
 """
             proc = subprocess.run([node_bin, "-e", harness, main_js], capture_output=True, text=True)
             self.assertEqual(proc.returncode, 0, f"Dashboard JS invariant failed:\n{proc.stderr}\n{proc.stdout}")
+
+    def test_exact_last_step_context_parity_with_claude_context(self) -> None:
+        transcript = self.root / "session.jsonl"
+        # Step 1: 80k ctx, Step 2: 125k ctx, Step 3 (final): 169.1k ctx -> avg ~124.7k, exact final = 169.1k
+        lines = [
+            json.dumps({
+                "type": "user",
+                "timestamp": "2026-11-20T06:00:00Z",
+                "message": {"content": "merged pr. continue with next stories"},
+            }),
+            json.dumps({
+                "type": "assistant",
+                "message": {
+                    "model": "claude-opus-5-5",
+                    "usage": {"input_tokens": 5000, "cache_creation_input_tokens": 5000, "cache_read_input_tokens": 70000, "output_tokens": 500},
+                    "content": [{"type": "text", "text": "step 1"}],
+                },
+            }),
+            json.dumps({
+                "type": "assistant",
+                "message": {
+                    "model": "claude-opus-5-5",
+                    "usage": {"input_tokens": 5000, "cache_creation_input_tokens": 5000, "cache_read_input_tokens": 115000, "output_tokens": 600},
+                    "content": [{"type": "text", "text": "step 2"}],
+                },
+            }),
+            json.dumps({
+                "type": "assistant",
+                "message": {
+                    "model": "claude-opus-5-5",
+                    "usage": {"input_tokens": 4100, "cache_creation_input_tokens": 5000, "cache_read_input_tokens": 160000, "output_tokens": 700},
+                    "content": [{"type": "text", "text": "done"}],
+                },
+            }),
+        ]
+        transcript.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        parsed = post_hook_mod._parse_claude_transcript_turns(transcript, self.root)
+        self.assertEqual(len(parsed), 1)
+        payload = parsed[0]["usage_payload"]
+        self.assertEqual(payload["last_step_context_tokens"], 169_100)
+
+        engine = cal_mod.CalibrationEngine(root_dir=self.root)
+        engine.reconcile_turn(
+            forecast={
+                "forecast_id": "tw_ctx_parity",
+                "prompt": parsed[0]["prompt"],
+                "profile_code": "C",
+                "optimization_level": 2,
+                "estimated_steps": 3,
+                "total_tokens": 300_000,
+                "costs": {"claude-opus-5-5": {"cached_cost_usd": 1.0, "uncached_cost_usd": 2.0, "unoptimized_cost_usd": 3.0}},
+            },
+            usage_payload=payload,
+        )
+        summary = tel_mod.TelemetryStore(root_dir=self.root).get_summary()
+        ch = summary["context_health"]
+        self.assertEqual(ch["current_context_tokens"], 169_100)
+        self.assertEqual(ch["context_window_limit"], 1_000_000)
+        self.assertEqual(ch["context_pct"], 16.9)
+        self.assertEqual(ch["measurement_mode"], "EXACT_LAST_STEP")
+        self.assertLess(ch["avg_tokens_per_step"], 169_100)
+        self.assertEqual(ch["status"], "BLOATED")
 
 
 if __name__ == "__main__":

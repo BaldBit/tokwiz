@@ -95,7 +95,8 @@ class TelemetryStore:
                     receipts_json TEXT NOT NULL DEFAULT '[]',
                     ab_baseline_tokens INTEGER NOT NULL DEFAULT 0,
                     ab_baseline_steps INTEGER NOT NULL DEFAULT 0,
-                    ab_baseline_cost_usd REAL NOT NULL DEFAULT 0.0
+                    ab_baseline_cost_usd REAL NOT NULL DEFAULT 0.0,
+                    last_step_context_tokens INTEGER NOT NULL DEFAULT 0
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_turns_ts ON turns(timestamp);
@@ -109,6 +110,7 @@ class TelemetryStore:
                 "ab_baseline_tokens INTEGER NOT NULL DEFAULT 0",
                 "ab_baseline_steps INTEGER NOT NULL DEFAULT 0",
                 "ab_baseline_cost_usd REAL NOT NULL DEFAULT 0.0",
+                "last_step_context_tokens INTEGER NOT NULL DEFAULT 0",
             ):
                 try:
                     conn.execute(f"ALTER TABLE turns ADD COLUMN {col_def}")
@@ -135,7 +137,8 @@ class TelemetryStore:
                     forecast_cost_usd, real_cost_usd, unoptimized_cost_usd, net_cost_saved_usd,
                     token_delta, cost_delta_usd, ape_pct, variance_tags,
                     telemetry_source, transcript_path, receipts_json,
-                    ab_baseline_tokens, ab_baseline_steps, ab_baseline_cost_usd
+                    ab_baseline_tokens, ab_baseline_steps, ab_baseline_cost_usd,
+                    last_step_context_tokens
                 ) VALUES (
                     ?, ?, ?, ?, ?,
                     ?, ?, ?, ?,
@@ -148,7 +151,8 @@ class TelemetryStore:
                     ?, ?, ?, ?,
                     ?, ?, ?, ?,
                     ?, ?, ?,
-                    ?, ?, ?
+                    ?, ?, ?,
+                    ?
                 )
                 """,
                 (
@@ -189,6 +193,7 @@ class TelemetryStore:
                     int(record.get("ab_baseline_tokens", 0)),
                     int(record.get("ab_baseline_steps", 0)),
                     float(record.get("ab_baseline_cost_usd", 0.0)),
+                    int(record.get("last_step_context_tokens", 0)),
                 ),
             )
 
@@ -435,16 +440,27 @@ class TelemetryStore:
         last_out = int(last_turn["real_output_tokens"]) + int(last_turn["real_reasoning_tokens"])
         # Handle both new rows (real_input_tokens includes cached) and legacy rows (cached stored separately)
         last_effective_ctx_total = max(last_in, last_total - last_out, last_in + (last_cached if last_total > last_in + last_out else 0))
-        latest_tok_per_step = last_effective_ctx_total // max(1, int(last_turn["real_steps"]))
-        if latest_tok_per_step > 100_000:
+        avg_tok_per_step = last_effective_ctx_total // max(1, int(last_turn["real_steps"]))
+        exact_last_step_ctx = int(last_turn.get("last_step_context_tokens") or 0)
+        current_ctx = exact_last_step_ctx if exact_last_step_ctx > 0 else avg_tok_per_step
+        latest_tok_per_step = current_ctx
+
+        model_low = str(last_turn.get("model_id") or "").lower()
+        if any(k in model_low for k in ("opus-5", "opus-4-6", "sonnet-4-6", "gemini-2.5", "gemini-3", "gemini-4")):
+            ctx_limit = 1_000_000
+        else:
+            ctx_limit = 200_000
+        ctx_pct = round((current_ctx / max(1, ctx_limit)) * 100.0, 1)
+
+        if current_ctx > 100_000:
             ctx_status = "BLOATED"
-            ctx_rec = "Bloated (>100k/step) — Run /clear + tokwiz_resume"
-        elif latest_tok_per_step >= 40_000:
+            ctx_rec = "Bloated (>100k ctx) — Run /clear + tokwiz_resume"
+        elif current_ctx >= 40_000:
             ctx_status = "WARM"
-            ctx_rec = "Warm (40k–100k/step) — Consider /clear + tokwiz_resume soon"
+            ctx_rec = "Warm (40k–100k ctx) — Consider /clear + tokwiz_resume soon"
         else:
             ctx_status = "HEALTHY"
-            ctx_rec = "Healthy (<40k/step) · Auto-checkpoint ready"
+            ctx_rec = "Healthy (<40k ctx) · Auto-checkpoint ready"
 
         # Compute deterministic Token Burn Diagnostics & Manual Action Plan
         burn_diagnostics: List[Dict[str, object]] = []
@@ -570,7 +586,12 @@ class TelemetryStore:
             "ab_comparison": ab_comparison,
             "context_health": {
                 "status": ctx_status,
-                "tokens_per_step": latest_tok_per_step,
+                "tokens_per_step": current_ctx,
+                "current_context_tokens": current_ctx,
+                "avg_tokens_per_step": avg_tok_per_step,
+                "context_window_limit": ctx_limit,
+                "context_pct": ctx_pct,
+                "measurement_mode": "EXACT_LAST_STEP" if exact_last_step_ctx > 0 else "TURN_AVG",
                 "recommendation": ctx_rec,
             },
             "burn_diagnostics": burn_diagnostics,

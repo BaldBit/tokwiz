@@ -274,31 +274,102 @@ class TokenEstimator:
 
         return PROFILES["A"]
 
-    def _estimate_recent_context_tokens(self) -> int:
-        """Seed starting context from the latest observed per-step effective context in telemetry.db."""
+    @staticmethod
+    def _is_continuation_prompt(prompt: str) -> bool:
+        p = prompt.lower().strip()
+        if not p:
+            return False
+        continuation_phrases = (
+            "continue",
+            "keep going",
+            "go ahead",
+            "proceed",
+            "next story",
+            "next stories",
+            "next 2",
+            "next two",
+            "next task",
+            "remaining",
+            "merged pr",
+            "maerged pr",
+            "merged all",
+            "work on next",
+            "pick up",
+        )
+        return any(phrase in p for phrase in continuation_phrases)
+
+    def _get_recent_session_context(self) -> Dict[str, object]:
+        """Read recent turn telemetry to seed exact raw context, step baseline, cache hit ratio, and output rate."""
+        default: Dict[str, object] = {
+            "has_telemetry": False,
+            "context_tokens": 450,
+            "last_profile_code": "A",
+            "last_real_steps": 0,
+            "recent_median_steps": 0,
+            "observed_cache_ratio": 0.80,
+            "avg_output_per_step": 0,
+        }
         db_path = self.root_dir / ".tokwiz" / "telemetry.db"
         if not db_path.exists():
-            return 450
+            return default
         try:
             import contextlib
             import sqlite3
+            import statistics
 
             with contextlib.closing(sqlite3.connect(str(db_path), timeout=0.3)) as conn:
-                row = conn.execute(
-                    "SELECT real_input_tokens, real_cached_input_tokens, real_steps FROM turns ORDER BY timestamp DESC LIMIT 1"
-                ).fetchone()
-            if not row:
-                return 450
-            steps = max(1, int(row[2] or 1))
-            raw_in = int(row[0] or 0)
-            cached_in = min(raw_in, int(row[1] or 0))
-            uncached_in = max(0, raw_in - cached_in)
-            eff_per_step = (uncached_in + int(cached_in * 0.1)) // steps
-            if eff_per_step > 450:
-                return min(40_000, eff_per_step)
+                cols = {r[1] for r in conn.execute("PRAGMA table_info(turns)").fetchall()}
+                if "last_step_context_tokens" in cols:
+                    rows = conn.execute(
+                        "SELECT real_input_tokens, real_cached_input_tokens, real_steps, "
+                        "profile_code, real_output_tokens, real_reasoning_tokens, last_step_context_tokens "
+                        "FROM turns ORDER BY timestamp DESC LIMIT 5"
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        "SELECT real_input_tokens, real_cached_input_tokens, real_steps, "
+                        "profile_code, real_output_tokens, real_reasoning_tokens, 0 "
+                        "FROM turns ORDER BY timestamp DESC LIMIT 5"
+                    ).fetchall()
+            if not rows:
+                return default
+
+            latest = rows[0]
+            steps = max(1, int(latest[2] or 1))
+            raw_in = int(latest[0] or 0)
+            last_step_ctx = int(latest[6] or 0)
+            raw_per_step = last_step_ctx if last_step_ctx > 0 else (raw_in // steps)
+            ctx_tok = min(1_000_000, max(450, raw_per_step))
+
+            recent_steps = [max(1, int(r[2] or 1)) for r in rows[:3]]
+            median_steps = int(statistics.median(recent_steps))
+
+            tot_in_recent = sum(max(0, int(r[0] or 0)) for r in rows[:3])
+            tot_cached_recent = sum(min(max(0, int(r[0] or 0)), max(0, int(r[1] or 0))) for r in rows[:3])
+            if tot_in_recent > 1_000:
+                obs_cache = max(0.50, min(0.96, tot_cached_recent / tot_in_recent))
+            else:
+                obs_cache = 0.80
+
+            tot_out_recent = sum(max(0, int(r[4] or 0)) + max(0, int(r[5] or 0)) for r in rows[:3])
+            tot_steps_recent = sum(recent_steps)
+            avg_out_per_step = tot_out_recent // max(1, tot_steps_recent)
+
+            return {
+                "has_telemetry": True,
+                "context_tokens": ctx_tok,
+                "last_profile_code": str(latest[3] or "C"),
+                "last_real_steps": steps,
+                "recent_median_steps": median_steps,
+                "observed_cache_ratio": obs_cache,
+                "avg_output_per_step": avg_out_per_step,
+            }
         except Exception:
-            pass
-        return 450
+            return default
+
+    def _estimate_recent_context_tokens(self) -> int:
+        """Seed starting context from the latest observed per-step raw context in telemetry.db."""
+        return int(self._get_recent_session_context()["context_tokens"])
 
     def estimate(
         self,
@@ -306,10 +377,22 @@ class TokenEstimator:
         context_tokens: int = 450,
         forced_level: Optional[int] = None,
     ) -> ForecastResult:
-        if context_tokens == 450:
-            context_tokens = self._estimate_recent_context_tokens()
+        session_ctx = self._get_recent_session_context()
+        has_telemetry = bool(session_ctx["has_telemetry"])
+        if context_tokens == 450 and has_telemetry:
+            context_tokens = int(session_ctx["context_tokens"])
         graph_slice = self.graph.query(prompt, max_tokens=400, auto_build=True)
         profile = self.classify_prompt(prompt, graph_slice)
+
+        # Continuation prompts ("please continue", "merged pr, continue with next stories")
+        # lack code symbol names; inherit the active workspace's recent workflow profile instead of Profile A.
+        is_continuation = self._is_continuation_prompt(prompt)
+        if is_continuation and profile.code == "A":
+            last_prof = str(session_ctx.get("last_profile_code") or "C")
+            if has_telemetry and last_prof in PROFILES and last_prof != "A":
+                profile = PROFILES[last_prof]
+            elif any(k in prompt.lower() for k in ("story", "stories", "epic", "remaining", "next 2", "next two")):
+                profile = PROFILES["C"]
 
         if profile.code == "A":
             opt_level = forced_level if forced_level in (1, 2, 3) else 1
@@ -328,11 +411,17 @@ class TokenEstimator:
         reason_mult = float(
             self.calibration.get("reasoning_multipliers", {}).get(profile.code, 1.0)  # type: ignore[union-attr]
         )
+        max_step_cap = 120 if (has_telemetry or step_mult > 1.5) else profile.max_steps
         if profile.code == "A" and len(graph_slice.matched_symbols) > 0:
             base_steps = min(2, max(1, (len(graph_slice.matched_symbols) + 1) // 2))
-            n_steps = max(1, round(base_steps * step_mult))
+            n_steps = max(1, min(max_step_cap, round(base_steps * step_mult)))
         else:
-            n_steps = max(profile.min_steps, min(profile.max_steps, round(profile.default_steps * step_mult)))
+            n_steps = max(profile.min_steps, min(max_step_cap, round(profile.default_steps * step_mult)))
+
+        if has_telemetry and is_continuation:
+            recent_med = int(session_ctx.get("recent_median_steps") or 0)
+            if recent_med > n_steps:
+                n_steps = min(120, round(0.4 * n_steps + 0.6 * recent_med))
 
         prompt_tok = count_tokens(prompt)
         blast_files = max(1, len(graph_slice.impacted_files)) if profile.code != "A" else len(graph_slice.impacted_files)
@@ -363,14 +452,23 @@ class TokenEstimator:
         )
         per_step_tool_in = profile.avg_tool_in_tokens
 
+        # When grounded in live workspace telemetry (>2k context), every tool step re-sends
+        # the full running context (1.0x) and KV-cache discounts are applied ONCE in _compute_model_costs().
+        # Fresh workspaces with no telemetry retain the lightweight 0.25x prefix factor.
+        step_ctx_factor = 1.0 if (has_telemetry and context_tokens > 2_000) else 0.25
         tool_loop_tokens = 0
         running_ctx = context_tokens + prompt_tok + (graph_slice.token_count if n_steps > 0 else 0)
         for _step in range(n_steps):
-            step_tokens = int(running_ctx * 0.25) + per_step_tool_in + per_step_tool_out
+            step_tokens = int(running_ctx * step_ctx_factor) + per_step_tool_in + per_step_tool_out
             tool_loop_tokens += step_tokens
             running_ctx += per_step_tool_in + per_step_tool_out
 
-        output_tokens = int(profile.base_output_tokens * level_compression)
+        base_output = int(profile.base_output_tokens * level_compression)
+        avg_out_per_step = int(session_ctx.get("avg_output_per_step") or 0)
+        if has_telemetry and avg_out_per_step > 0:
+            output_tokens = max(base_output, min(n_steps * 2_000, int(n_steps * avg_out_per_step)))
+        else:
+            output_tokens = base_output
         reasoning_tokens = int((prompt_tok + output_tokens + per_step_tool_out) * profile.reasoning_ratio * reason_mult)
 
         total_tokens = context_tokens + prompt_tok + tool_loop_tokens + reasoning_tokens + output_tokens
@@ -394,12 +492,14 @@ class TokenEstimator:
         savings_tokens = max(0, unoptimized_tokens - total_tokens)
         savings_pct = round((savings_tokens / max(1, unoptimized_tokens)) * 100.0, 1)
 
+        observed_cache_ratio = float(session_ctx.get("observed_cache_ratio") or 0.80)
         costs = self._compute_model_costs(
             input_tokens=context_tokens + prompt_tok + tool_loop_tokens,
             reasoning_tokens=reasoning_tokens,
             output_tokens=output_tokens,
             unoptimized_tokens=unoptimized_tokens,
             profile_code=profile.code,
+            cache_hit_ratio=observed_cache_ratio,
         )
 
         matched_names = [str(s["name"]) for s in graph_slice.matched_symbols]
@@ -439,11 +539,13 @@ class TokenEstimator:
         output_tokens: int,
         unoptimized_tokens: int,
         profile_code: str = "B",
+        cache_hit_ratio: float = 0.80,
     ) -> Dict[str, ModelCostEstimate]:
         models_cfg: Dict[str, Dict[str, object]] = self.pricing.get("models", {})  # type: ignore[assignment]
         per_unit = float(self.pricing.get("per_tokens", 1_000_000))
         scale_factors: Dict[str, float] = self.calibration.get("cost_scale_factors", {})  # type: ignore[assignment]
         estimates: Dict[str, ModelCostEstimate] = {}
+        hit_ratio = max(0.50, min(0.96, float(cache_hit_ratio)))
 
         for model_id, m in models_cfg.items():
             in_rate = float(m["input_per_1m"]) / per_unit
@@ -454,8 +556,8 @@ class TokenEstimator:
 
             effective_out = output_tokens + int(reasoning_tokens * r_mult)
             uncached_usd = ((input_tokens * in_rate) + (effective_out * out_rate)) * c_scale
-            # Assume 80% of input + tool loop context hits KV cache when cache hygiene is active
-            cached_input_part = int(input_tokens * 0.80)
+            # Apply observed workspace KV-cache hit rate (defaults to 80% on fresh workspaces)
+            cached_input_part = int(input_tokens * hit_ratio)
             fresh_input_part = input_tokens - cached_input_part
             cached_usd = ((fresh_input_part * in_rate) + (cached_input_part * cached_rate) + (effective_out * out_rate)) * c_scale
 
