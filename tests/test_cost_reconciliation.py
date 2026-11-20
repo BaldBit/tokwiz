@@ -586,6 +586,70 @@ if (!doc.getElementById("kpiContextSub").textContent.includes("Avg 124.6k/step")
             else:
                 os.environ["TOKWIZ_CLAUDE_PROJECTS_DIR"] = old_env
 
+    def test_claude_duplicate_streaming_message_id_dedup_and_sidechain_guard(self) -> None:
+        """Duplicate JSONL lines with the same message.id must count as 1 step & 1x tokens, and sidechains must not overwrite last_step_ctx."""
+        transcript = self.root / "dup_stream.jsonl"
+        lines = [
+            json.dumps({
+                "type": "user",
+                "timestamp": "2026-11-20T10:00:00Z",
+                "message": {"content": "merged it now lets work on the next 2 stories"},
+            }),
+            # 3 streaming chunks for the exact same message.id
+            json.dumps({
+                "type": "assistant",
+                "isSidechain": False,
+                "message": {
+                    "id": "msg_01ABC",
+                    "model": "claude-opus-5-5",
+                    "usage": {"input_tokens": 2, "cache_creation_input_tokens": 729, "cache_read_input_tokens": 157209, "output_tokens": 100},
+                    "content": [{"type": "thinking", "thinking": "..."}],
+                },
+            }),
+            json.dumps({
+                "type": "assistant",
+                "isSidechain": False,
+                "message": {
+                    "id": "msg_01ABC",
+                    "model": "claude-opus-5-5",
+                    "usage": {"input_tokens": 2, "cache_creation_input_tokens": 729, "cache_read_input_tokens": 157209, "output_tokens": 341},
+                    "content": [{"type": "text", "text": "Working on it"}],
+                },
+            }),
+            json.dumps({
+                "type": "assistant",
+                "isSidechain": False,
+                "message": {
+                    "id": "msg_01ABC",
+                    "model": "claude-opus-5-5",
+                    "usage": {"input_tokens": 2, "cache_creation_input_tokens": 729, "cache_read_input_tokens": 157209, "output_tokens": 341},
+                    "content": [{"type": "tool_use", "id": "tu_1", "name": "Read", "input": {"file_path": "src/auth.ts"}}],
+                },
+            }),
+            # Subagent sidechain call with much smaller context (must NOT overwrite main session's 157,940 ctx)
+            json.dumps({
+                "type": "assistant",
+                "isSidechain": True,
+                "message": {
+                    "id": "msg_02SIDE",
+                    "model": "claude-3-5-haiku",
+                    "usage": {"input_tokens": 100, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 20000, "output_tokens": 50},
+                    "content": [{"type": "text", "text": "subagent"}],
+                },
+            }),
+        ]
+        transcript.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        parsed = post_hook_mod._parse_claude_transcript_turns(transcript, self.root)
+        self.assertEqual(len(parsed), 1)
+        t = parsed[0]
+        # 2 unique message IDs (not 4!)
+        self.assertEqual(t["steps"], 2)
+        # Main message usage counted ONCE (not 3x!) + sidechain
+        self.assertEqual(t["usage_payload"]["usage"]["cache_read_input_tokens"], 157209 + 20000)
+        self.assertEqual(t["usage_payload"]["usage"]["output_tokens"], 341 + 50)
+        # Sidechain must NOT overwrite main session last_step_context_tokens
+        self.assertEqual(t["usage_payload"]["last_step_context_tokens"], 157940)
+
 
 if __name__ == "__main__":
     unittest.main()

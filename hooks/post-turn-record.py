@@ -749,26 +749,45 @@ def _parse_claude_transcript_turns(
                     "output_tok": 0,
                     "tool_tok": 0,
                     "last_step_ctx": 0,
+                    "seen_msg_usage": {},
                     "model": "claude-sonnet-4",
                     "tool_counts": {"read": 0, "ranged_read": 0, "graph": 0, "grep": 0, "cmd": 0, "edit": 0},
                     "tool_events": [],
                 }
 
         elif evt_type == "assistant" and cur is not None:
-            cur["steps"] = int(cur["steps"]) + 1
             if msg.get("model"):
                 cur["model"] = str(msg["model"])
+            msg_id = str(msg.get("id") or "")
+            seen_usage: Dict[str, Tuple[int, int, int, int]] = cur["seen_msg_usage"]  # type: ignore[assignment]
+            is_dup_stream_msg = bool(msg_id and msg_id in seen_usage)
+            if not is_dup_stream_msg:
+                cur["steps"] = int(cur["steps"]) + 1
             usage = msg.get("usage")
             if isinstance(usage, dict):
                 step_in = int(usage.get("input_tokens") or 0)
                 step_cc = int(usage.get("cache_creation_input_tokens") or 0)
                 step_cr = int(usage.get("cache_read_input_tokens") or 0)
-                cur["input_tok"] = int(cur["input_tok"]) + step_in
-                cur["cache_create_tok"] = int(cur["cache_create_tok"]) + step_cc
-                cur["cache_read_tok"] = int(cur["cache_read_tok"]) + step_cr
-                cur["output_tok"] = int(cur["output_tok"]) + int(usage.get("output_tokens") or 0)
+                step_out = int(usage.get("output_tokens") or 0)
+                if msg_id:
+                    prev_in, prev_cc, prev_cr, prev_out = seen_usage.get(msg_id, (0, 0, 0, 0))
+                    cur["input_tok"] = int(cur["input_tok"]) + max(0, step_in - prev_in)
+                    cur["cache_create_tok"] = int(cur["cache_create_tok"]) + max(0, step_cc - prev_cc)
+                    cur["cache_read_tok"] = int(cur["cache_read_tok"]) + max(0, step_cr - prev_cr)
+                    cur["output_tok"] = int(cur["output_tok"]) + max(0, step_out - prev_out)
+                    seen_usage[msg_id] = (
+                        max(prev_in, step_in),
+                        max(prev_cc, step_cc),
+                        max(prev_cr, step_cr),
+                        max(prev_out, step_out),
+                    )
+                else:
+                    cur["input_tok"] = int(cur["input_tok"]) + step_in
+                    cur["cache_create_tok"] = int(cur["cache_create_tok"]) + step_cc
+                    cur["cache_read_tok"] = int(cur["cache_read_tok"]) + step_cr
+                    cur["output_tok"] = int(cur["output_tok"]) + step_out
                 step_ctx = step_in + step_cc + step_cr
-                if step_ctx > 0:
+                if step_ctx > 0 and not obj.get("isSidechain"):
                     cur["last_step_ctx"] = step_ctx
 
             if isinstance(content, list):

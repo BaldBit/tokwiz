@@ -215,7 +215,11 @@ class TokenEstimator:
         cal_path = self.root_dir / ".tokwiz" / "calibration.json"
         if cal_path.exists():
             try:
-                return json.loads(cal_path.read_text(encoding="utf-8"))
+                data = json.loads(cal_path.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    if int(data.get("version", 1)) < 2:
+                        data["cost_scale_factors"] = {}
+                    return data
             except Exception:
                 return {}
         return {}
@@ -553,6 +557,7 @@ class TokenEstimator:
             out_rate = float(m["output_per_1m"]) / per_unit
             r_mult = float(m.get("reasoning_multiplier", 1.0))
             c_scale = float(scale_factors.get(f"{model_id}:{profile_code}", 1.0)) if isinstance(scale_factors, dict) else 1.0
+            c_scale = max(0.5, min(2.0, c_scale))
 
             effective_out = output_tokens + int(reasoning_tokens * r_mult)
             uncached_usd = ((input_tokens * in_rate) + (effective_out * out_rate)) * c_scale

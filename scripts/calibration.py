@@ -249,11 +249,19 @@ class CalibrationEngine:
     def load_weights(self) -> Dict[str, object]:
         if self.cal_path.exists():
             try:
-                return json.loads(self.cal_path.read_text(encoding="utf-8"))
+                data = json.loads(self.cal_path.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    # Migrate legacy v1 calibration files whose cost_scale_factors were
+                    # inflated (2.5x–5.0x) by the pre-v1.8.1 double cache-discount bug.
+                    if int(data.get("version", 1)) < 2:
+                        data["version"] = 2
+                        data["cost_scale_factors"] = {}
+                        self.save_weights(data)
+                    return data
             except Exception:
                 pass
         return {
-            "version": 1,
+            "version": 2,
             "turns_calibrated": 0,
             "profile_step_multipliers": {"A": 1.0, "B": 1.0, "C": 1.0, "D": 1.0, "E": 1.0},
             "tool_output_multipliers": {"A": 1.0, "B": 1.0, "C": 1.0, "D": 1.0, "E": 1.0},

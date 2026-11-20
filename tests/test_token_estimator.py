@@ -190,6 +190,35 @@ class TestTokenEstimator(unittest.TestCase):
         # By turn 4, forecast must converge well under 25% APE (previously stuck at ~97% APE)
         self.assertLess(apes[-1], 25.0, f"Expected heavy-session forecast APE < 25%, got {apes}")
 
+    def test_legacy_v1_poisoned_cost_scale_factors_are_reset(self) -> None:
+        cal_dir = self.root / ".tokwiz"
+        cal_dir.mkdir(parents=True, exist_ok=True)
+        (cal_dir / "calibration.json").write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "profile_step_multipliers": {"C": 1.5},
+                    "cost_scale_factors": {"claude-opus-5-5:C": 3.31},
+                }
+            ),
+            encoding="utf-8",
+        )
+        est_v1 = est_mod.TokenEstimator(root_dir=self.root)
+        res_v1 = est_v1.estimate("Refactor validateToken across callers")
+
+        # Compare against clean v2 calibration with no cost_scale_factors
+        (cal_dir / "calibration.json").write_text(
+            json.dumps({"version": 2, "profile_step_multipliers": {"C": 1.5}, "cost_scale_factors": {}}),
+            encoding="utf-8",
+        )
+        est_v2 = est_mod.TokenEstimator(root_dir=self.root)
+        res_v2 = est_v2.estimate("Refactor validateToken across callers")
+        self.assertAlmostEqual(
+            res_v1.costs["claude-opus-5-5"].cached_cost_usd,
+            res_v2.costs["claude-opus-5-5"].cached_cost_usd,
+            places=6,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
