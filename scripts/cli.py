@@ -795,6 +795,9 @@ def _cmd_verify_ab(argv: List[str]) -> int:
 def main(argv: Optional[List[str]] = None) -> int:
     _ensure_valid_cwd()
     args_list = list(sys.argv[1:] if argv is None else argv)
+    if args_list and args_list[0] in ("-V", "--version", "version"):
+        print(f"tokwiz v{_current_version()}")
+        return 0
     if not args_list or args_list[0] in ("-h", "--help"):
         print(
             "usage: tokwiz <command> [options]\n\n"

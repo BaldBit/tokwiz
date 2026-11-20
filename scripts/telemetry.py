@@ -215,6 +215,18 @@ class TelemetryStore:
                 (int(ab_baseline_tokens), int(ab_baseline_steps), float(ab_baseline_cost_usd), str(forecast_id)),
             )
 
+    def update_last_step_context(
+        self,
+        forecast_id: str,
+        last_step_context_tokens: int,
+    ) -> None:
+        """Backfill or live-update exact final-step context without mutating reconciled forecast/cost/APE."""
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE turns SET last_step_context_tokens = ? WHERE forecast_id = ?",
+                (int(last_step_context_tokens), str(forecast_id)),
+            )
+
     def get_summary(self, days: Optional[int] = None, limit: int = 50) -> Dict[str, object]:
         # Automatically sync any completed real Antigravity transcript turns for this workspace
         ab_comparison: Optional[Dict[str, object]] = None

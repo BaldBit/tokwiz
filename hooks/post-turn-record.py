@@ -1125,8 +1125,9 @@ def sync_workspace_transcript_turns(
     engine = cal_mod.CalibrationEngine(root_dir=ws_root)
     estimator: Optional[object] = None
 
-    # Read existing recorded turn IDs and their ab_baseline_tokens from telemetry.db
+    # Read existing recorded turn IDs, their ab_baseline_tokens, and last_step_context_tokens from telemetry.db
     existing_ab_by_id: Dict[str, int] = {}
+    existing_ctx_by_id: Dict[str, int] = {}
     db_path = tokwiz_dir / "telemetry.db"
     if db_path.exists():
         try:
@@ -1134,10 +1135,20 @@ def sync_workspace_transcript_turns(
             import sqlite3
 
             with contextlib.closing(sqlite3.connect(str(db_path))) as conn:
-                for row in conn.execute("SELECT forecast_id, ab_baseline_tokens FROM turns").fetchall():
-                    existing_ab_by_id[str(row[0])] = int(row[1] or 0)
+                cols = {r[1] for r in conn.execute("PRAGMA table_info(turns)").fetchall()}
+                if "last_step_context_tokens" in cols:
+                    for row in conn.execute(
+                        "SELECT forecast_id, ab_baseline_tokens, last_step_context_tokens FROM turns"
+                    ).fetchall():
+                        existing_ab_by_id[str(row[0])] = int(row[1] or 0)
+                        existing_ctx_by_id[str(row[0])] = int(row[2] or 0)
+                else:
+                    for row in conn.execute("SELECT forecast_id, ab_baseline_tokens FROM turns").fetchall():
+                        existing_ab_by_id[str(row[0])] = int(row[1] or 0)
+                        existing_ctx_by_id[str(row[0])] = 0
         except Exception:
             existing_ab_by_id = {}
+            existing_ctx_by_id = {}
 
     used_forecast_ids: Set[str] = set()
     reconciled_records: List[Dict[str, object]] = []
@@ -1220,9 +1231,14 @@ def sync_workspace_transcript_turns(
                 break
 
         # 3. Strict Immutability: If `fid` is already recorded in `telemetry.db`, NEVER re-reconcile it!
+        #    Only backfill optional metadata (ab_baseline_tokens, live last_step_context_tokens).
         if fid in existing_ab_by_id:
             if existing_ab_by_id[fid] == 0 and bt_tok > 0:
                 engine.telemetry.update_ab_baseline(fid, bt_tok, bt_steps, bt_cost)
+            new_last_ctx = int(u_payload.get("last_step_context_tokens") or 0)
+            if new_last_ctx > 0 and new_last_ctx != existing_ctx_by_id.get(fid, 0):
+                engine.telemetry.update_last_step_context(fid, new_last_ctx)
+                existing_ctx_by_id[fid] = new_last_ctx
             continue
 
         rec = engine.reconcile_turn(forecast=matched_forecast, usage_payload=u_payload)

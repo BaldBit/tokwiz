@@ -515,6 +515,77 @@ if (!doc.getElementById("kpiContextSub").textContent.includes("Avg 124.6k/step")
         self.assertLess(ch["avg_tokens_per_step"], 169_100)
         self.assertEqual(ch["status"], "BLOATED")
 
+    def test_live_context_backfill_and_growth_on_existing_turn_without_mutating_forecast(self) -> None:
+        """Refreshing after upgrade or mid-turn must backfill/update last_step_context_tokens without mutating forecast/APE."""
+        import os
+
+        (self.root / ".tokwiz").mkdir(parents=True, exist_ok=True)
+        claude_root = self.root / "_mock_claude_projects"
+        slug = post_hook_mod._claude_project_slug(self.root)
+        slug_dir = claude_root / slug
+        slug_dir.mkdir(parents=True, exist_ok=True)
+        transcript = slug_dir / "session.jsonl"
+
+        base_lines = [
+            json.dumps({
+                "type": "user",
+                "timestamp": "2026-11-20T06:00:00Z",
+                "message": {"content": "merged pr. continue with next stories"},
+            }),
+            json.dumps({
+                "type": "assistant",
+                "message": {
+                    "model": "claude-opus-5-5",
+                    "usage": {"input_tokens": 5000, "cache_creation_input_tokens": 5000, "cache_read_input_tokens": 159100, "output_tokens": 500},
+                    "content": [{"type": "text", "text": "step 1"}],
+                },
+            }),
+        ]
+        transcript.write_text("\n".join(base_lines) + "\n", encoding="utf-8")
+
+        old_env = os.environ.get("TOKWIZ_CLAUDE_PROJECTS_DIR")
+        os.environ["TOKWIZ_CLAUDE_PROJECTS_DIR"] = str(claude_root)
+        try:
+            # First sync creates the turn
+            post_hook_mod.sync_workspace_transcript_turns(self.root)
+            store = tel_mod.TelemetryStore(root_dir=self.root)
+            s1 = store.get_summary()
+            fid = s1["turns"][-1]["forecast_id"]
+            orig_f_cost = s1["turns"][-1]["forecast_cost_usd"]
+            orig_ape = s1["turns"][-1]["ape_pct"]
+            self.assertEqual(s1["context_health"]["current_context_tokens"], 169_100)
+
+            # Simulate a pre-v1.8.1 DB row where last_step_context_tokens was 0
+            store.update_last_step_context(fid, 0)
+            post_hook_mod.sync_workspace_transcript_turns(self.root)
+            s2 = store.get_summary()
+            self.assertEqual(s2["context_health"]["current_context_tokens"], 169_100)
+            self.assertEqual(s2["turns"][-1]["forecast_cost_usd"], orig_f_cost)
+            self.assertEqual(s2["turns"][-1]["ape_pct"], orig_ape)
+
+            # Simulate the active turn growing mid-turn to 257.1k
+            grown_lines = base_lines + [
+                json.dumps({
+                    "type": "assistant",
+                    "message": {
+                        "model": "claude-opus-5-5",
+                        "usage": {"input_tokens": 4100, "cache_creation_input_tokens": 3000, "cache_read_input_tokens": 250000, "output_tokens": 700},
+                        "content": [{"type": "text", "text": "step 2"}],
+                    },
+                })
+            ]
+            transcript.write_text("\n".join(grown_lines) + "\n", encoding="utf-8")
+            post_hook_mod.sync_workspace_transcript_turns(self.root)
+            s3 = store.get_summary()
+            self.assertEqual(s3["context_health"]["current_context_tokens"], 257_100)
+            self.assertEqual(s3["context_health"]["context_pct"], 25.7)
+            self.assertEqual(s3["turns"][-1]["forecast_cost_usd"], orig_f_cost)
+        finally:
+            if old_env is None:
+                os.environ.pop("TOKWIZ_CLAUDE_PROJECTS_DIR", None)
+            else:
+                os.environ["TOKWIZ_CLAUDE_PROJECTS_DIR"] = old_env
+
 
 if __name__ == "__main__":
     unittest.main()
